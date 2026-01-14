@@ -1,0 +1,225 @@
+import { useQuery } from '@tanstack/react-query'
+import { createClient } from '@/lib/supabase/client'
+
+interface LedgerBalance {
+  income: number
+  expense: number
+  balance: number
+}
+
+interface LedgerBalanceParams {
+  ledgerId: string
+  ledgerType: 'ledger' | 'account_book'
+}
+
+const getLedgerBalance = async ({ ledgerId, ledgerType }: LedgerBalanceParams): Promise<LedgerBalance> => {
+  const supabase = createClient()
+
+  // Get current user to calculate personal balance including settlements
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { income: 0, expense: 0, balance: 0 }
+  }
+
+  // Determine which column to use based on ledger type
+  // transactions table uses ledger_id for ledgers and book_id for account_books
+  const transactionIdColumn = ledgerType === 'ledger' ? 'ledger_id' : 'book_id'
+  // settlements table now uses ledger_id for both ledgers and account_books (after SQL migration)
+  const settlementIdColumn = 'ledger_id'
+
+  // Personal income: only include personal income (exclude common fund deposit / bonus-refund)
+  // Note: be resilient if some columns/migrations are not yet applied on the DB.
+  let incomeResult = await supabase
+    .from('transactions')
+    .select('amount')
+    .eq(transactionIdColumn, ledgerId)
+    .eq('type', 'income')
+    .eq('payer_id', user.id)
+    .or('income_mode.eq.personal,income_mode.is.null')
+
+  if (incomeResult.error) {
+    incomeResult = await supabase
+      .from('transactions')
+      .select('amount')
+      .eq(transactionIdColumn, ledgerId)
+      .eq('type', 'income')
+      .eq('payer_id', user.id)
+  }
+
+  const income = incomeResult.data?.reduce((sum, t) => sum + Number(t.amount || 0), 0) || 0
+
+  // Personal expense: compute from splits, and for payer-without-self-split compute (tx.amount - sum(others))
+  let expenseTxResult = await supabase
+    .from('transactions')
+    .select('id, amount, payer_id')
+    .eq(transactionIdColumn, ledgerId)
+    .eq('type', 'expense')
+    .neq('expense_payment_source', 'deposit')
+
+  if (expenseTxResult.error) {
+    expenseTxResult = await supabase
+      .from('transactions')
+      .select('id, amount, payer_id')
+      .eq(transactionIdColumn, ledgerId)
+      .eq('type', 'expense')
+  }
+
+  const expenseTxs = (expenseTxResult.data || []) as Array<{ id: string; amount: any; payer_id: string }>
+  if (!expenseTxs.length) {
+    // still compute settlements below
+    const expense = 0
+    let repaymentsReceived = 0
+    let repaymentsPaid = 0
+    try {
+      const [settlementsReceivedResult, settlementsPaidResult] = await Promise.all([
+        supabase
+          .from('settlements')
+          .select('amount')
+          .eq(settlementIdColumn, ledgerId)
+          .eq('receiver_id', user.id),
+        supabase
+          .from('settlements')
+          .select('amount')
+          .eq(settlementIdColumn, ledgerId)
+          .eq('sender_id', user.id),
+      ])
+      if (!settlementsReceivedResult.error) {
+        repaymentsReceived = settlementsReceivedResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+      }
+      if (!settlementsPaidResult.error) {
+        repaymentsPaid = settlementsPaidResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+      }
+    } catch {
+      // ignore
+    }
+    const balance = (income - expense) + (repaymentsReceived - repaymentsPaid)
+    return { income, expense, balance }
+  }
+
+  const expenseTxById = new Map<string, { amount: number; payer_id: string }>()
+  const payerTxIds: string[] = []
+  const allExpenseTxIds: string[] = []
+  for (const t of expenseTxs) {
+    const id = (t as any).id as string
+    const amount = Number((t as any).amount || 0)
+    const payer_id = (t as any).payer_id as string
+    expenseTxById.set(id, { amount, payer_id })
+    allExpenseTxIds.push(id)
+    if (payer_id === user.id) payerTxIds.push(id)
+  }
+
+  const splitsScopeColumn = ledgerType === 'ledger' ? 'ledger_id' : 'book_id'
+
+  let splitsSelfResult = await supabase
+    .from('transaction_splits')
+    .select(`
+      transaction_id,
+      amount,
+      transactions!inner (
+        type,
+        expense_payment_source
+      )
+    `)
+    .eq(splitsScopeColumn, ledgerId)
+    .eq('user_id', user.id)
+    .eq('transactions.type', 'expense')
+    .neq('transactions.expense_payment_source', 'deposit')
+
+  if (splitsSelfResult.error) {
+    splitsSelfResult = await supabase
+      .from('transaction_splits')
+      .select('transaction_id, amount')
+      .eq(splitsScopeColumn, ledgerId)
+      .eq('user_id', user.id)
+  }
+
+  const selfSplitAmountByTx = new Map<string, number>()
+  let expenseFromSelfSplits = 0
+  for (const s of splitsSelfResult.data || []) {
+    const txId = (s as any).transaction_id as string
+    const amt = Number((s as any).amount || 0)
+    if (!txId) continue
+    // Only count splits that belong to expense transactions we are considering
+    if (!expenseTxById.has(txId)) continue
+    selfSplitAmountByTx.set(txId, (selfSplitAmountByTx.get(txId) || 0) + amt)
+    expenseFromSelfSplits += amt
+  }
+
+  let expenseFromPayerOwnShare = 0
+  if (payerTxIds.length > 0) {
+    const splitsOthersResult = await supabase
+      .from('transaction_splits')
+      .select('transaction_id, amount, user_id')
+      .in('transaction_id', payerTxIds)
+      .neq('user_id', user.id)
+
+    const othersSumByTx = new Map<string, number>()
+    for (const s of splitsOthersResult.data || []) {
+      const txId = (s as any).transaction_id as string
+      const amt = Number((s as any).amount || 0)
+      if (!txId) continue
+      othersSumByTx.set(txId, (othersSumByTx.get(txId) || 0) + amt)
+    }
+
+    for (const txId of payerTxIds) {
+      // If we already have a self split row, it already represents user's share.
+      if (selfSplitAmountByTx.has(txId)) continue
+      const tx = expenseTxById.get(txId)
+      if (!tx) continue
+      const others = othersSumByTx.get(txId) || 0
+      const ownShare = tx.amount - others
+      if (ownShare > 0) expenseFromPayerOwnShare += ownShare
+    }
+  }
+
+  const expense = expenseFromSelfSplits + expenseFromPayerOwnShare
+  
+  // Fetch settlements using the correct column based on ledger type
+  // Settlements affect personal balance but are NOT real income/expense
+  let repaymentsReceived = 0
+  let repaymentsPaid = 0
+  
+  try {
+    const [settlementsReceivedResult, settlementsPaidResult] = await Promise.all([
+      supabase
+        .from('settlements')
+        .select('amount')
+        .eq(settlementIdColumn, ledgerId)
+        .eq('receiver_id', user.id),
+      supabase
+        .from('settlements')
+        .select('amount')
+        .eq(settlementIdColumn, ledgerId)
+        .eq('sender_id', user.id),
+    ])
+    
+    if (!settlementsReceivedResult.error) {
+      repaymentsReceived = settlementsReceivedResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+    }
+    if (!settlementsPaidResult.error) {
+      repaymentsPaid = settlementsPaidResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+    }
+  } catch (error) {
+    // If settlements table doesn't exist or has different schema, just ignore it
+    console.warn('Could not fetch settlements:', error)
+  }
+  
+  // Balance = (Income - Expense) + (Repayments Received - Repayments Paid)
+  // This gives the personal balance perspective
+  const balance = (income - expense) + (repaymentsReceived - repaymentsPaid)
+
+  return { income, expense, balance }
+}
+
+export function useLedgerBalance(ledgerId: string | null, ledgerType?: 'ledger' | 'account_book') {
+  return useQuery({
+    queryKey: ['ledgerBalance', ledgerId, ledgerType],
+    queryFn: () => getLedgerBalance({ ledgerId: ledgerId!, ledgerType: ledgerType || 'ledger' }),
+    enabled: !!ledgerId,
+    staleTime: 1 * 60 * 1000, // 1 minute
+    gcTime: 5 * 60 * 1000, // 5 minutes
+    retry: 3, // Retry up to 3 times on failure
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+  })
+}
+

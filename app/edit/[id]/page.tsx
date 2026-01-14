@@ -1,0 +1,2287 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { ArrowLeft } from 'lucide-react'
+import { useRouter, useParams } from 'next/navigation'
+import Link from 'next/link'
+import { useQueryClient } from '@tanstack/react-query'
+import CategoryPicker from '@/components/CategoryPicker'
+import SelectParticipants from '@/components/SelectParticipants'
+import DatePickerModal from '@/components/DatePickerModal'
+import NumericKeypad from '@/components/NumericKeypad'
+import { createClient } from '@/lib/supabase/client'
+import { useLedger } from '@/contexts/LedgerContext'
+import { useParticipants } from '@/hooks/useParticipants'
+import { useErrorHandler } from '@/hooks/useErrorHandler'
+import ErrorToast from '@/components/ErrorToast'
+import { formatSimpleDate } from '@/utils/date'
+import Loading from '@/components/Loading'
+
+interface Participant {
+  id: string
+  name: string
+  avatar?: string
+  isPayer?: boolean
+}
+
+export default function EditTransactionPage() {
+  const DEPOSIT_PAYER_ID = '__DEPOSIT__'
+  const router = useRouter()
+  const params = useParams()
+  const transactionId = params.id as string
+  const isSettlement = transactionId.startsWith('settlement-')
+  const settlementId = isSettlement ? transactionId.replace('settlement-', '') : null
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+  const { activeLedger, refreshLedgers } = useLedger()
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [transactionType, setTransactionType] = useState<'expense' | 'income'>('expense')
+  const [amount, setAmount] = useState('0')
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [isPublicExpense, setIsPublicExpense] = useState(false)
+  const [showParticipantsModal, setShowParticipantsModal] = useState(false)
+  const [showPayerModal, setShowPayerModal] = useState(false)
+  const [showCreateCategoryModal, setShowCreateCategoryModal] = useState(false)
+  const [showKeypad, setShowKeypad] = useState(false)
+  const [selectedParticipantIds, setSelectedParticipantIds] = useState<string[]>([])
+  const [publicShareParticipantIds, setPublicShareParticipantIds] = useState<string[]>([])
+  const [payerId, setPayerId] = useState<string>('')
+  const [depositManagerId, setDepositManagerId] = useState<string>('')
+  const [depositParticipantIds, setDepositParticipantIds] = useState<string[]>([])
+  const [depositSplitAmounts, setDepositSplitAmounts] = useState<Record<string, string>>({})
+  const [participantsModalMode, setParticipantsModalMode] = useState<'expense' | 'deposit'>('expense')
+  const [payerModalMode, setPayerModalMode] = useState<'expense' | 'deposit'>('expense')
+  const [incomeMode, setIncomeMode] = useState<'personal' | 'deposit' | 'bonus'>('personal')
+  const [publicAmount, setPublicAmount] = useState<string>('')
+  const [publicAmountManuallySet, setPublicAmountManuallySet] = useState(false)
+  const [customSplitAmounts, setCustomSplitAmounts] = useState<Record<string, string>>({})
+  const [showPublicShareModal, setShowPublicShareModal] = useState(false)
+  const [repaymentParticipantIds, setRepaymentParticipantIds] = useState<string[]>([])
+  const [showRepaymentModal, setShowRepaymentModal] = useState(false)
+  const [originalTransaction, setOriginalTransaction] = useState<any>(null)
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null)
+  const [originalRepaymentParticipantIds, setOriginalRepaymentParticipantIds] = useState<string[]>([])
+  const [settlementSenderId, setSettlementSenderId] = useState<string>('')
+  const [settlementReceiverId, setSettlementReceiverId] = useState<string>('')
+  const [settlementCreatedAt, setSettlementCreatedAt] = useState<Date | null>(null)
+
+  // Use React Query hook for participants
+  // IMPORTANT: pass activeLedger.id for BOTH ledger and account_book
+  // useParticipants() will detect which membership table to use.
+  const { data: participantsData = [] } = useParticipants(activeLedger?.id || null)
+  const participants = participantsData
+  const isMultiMemberLedger = participants.length > 1
+  const expensePayerOptions = useCallback(() => {
+    if (!isMultiMemberLedger) return participants
+    const depositOption = { id: DEPOSIT_PAYER_ID, name: '儲值金' } as any
+    return [depositOption, ...participants]
+  }, [participants, DEPOSIT_PAYER_ID, isMultiMemberLedger])
+
+  // Use unified error handler
+  const { error, isErrorVisible, handleError, clearError } = useErrorHandler()
+
+  // Load transaction data
+  useEffect(() => {
+    const loadTransaction = async () => {
+      setLoading(true)
+      try {
+        const { data: { user: currentUser } } = await supabase.auth.getUser()
+        if (!currentUser) {
+          router.push('/login')
+          return
+        }
+        setUser(currentUser)
+
+        if (isSettlement && settlementId) {
+          const { data: s, error: sError } = await supabase
+            .from('settlements')
+            .select('id, sender_id, receiver_id, amount, created_at, date, ledger_id, note')
+            .eq('id', settlementId)
+            .single()
+
+          if (sError || !s) {
+            handleError(sError, '載入還款資料失敗')
+            router.back()
+            return
+          }
+
+          setAmount(String(s.amount ?? '0'))
+          setSettlementSenderId(s.sender_id)
+          setSettlementReceiverId(s.receiver_id)
+          setSettlementCreatedAt(s.date ? new Date(s.date) : s.created_at ? new Date(s.created_at) : new Date())
+          
+          // Determine if this user is receiver or sender
+          const isReceiver = s.receiver_id === currentUser.id;
+          setTransactionType('income') // Force to "Receive Repayment" mode
+          setSelectedDate(s.date ? new Date(s.date) : s.created_at ? new Date(s.created_at) : new Date())
+          setNote(s.note || '')
+          
+          // Repayment UI state: Always treat as "I am receiver" for the form
+          if (isReceiver) {
+            setRepaymentParticipantIds([s.sender_id])
+            setOriginalRepaymentParticipantIds([s.sender_id])
+          } else {
+            // If it was originally a "Pay Repayment", swap roles for editing
+            setRepaymentParticipantIds([s.receiver_id])
+            setOriginalRepaymentParticipantIds([s.receiver_id])
+          }
+
+          setSelectedCategory(null) // Repayment doesn't have category_id in settlements table
+          setSelectedCategoryName('To receive from') // Set to special repayment category name
+          setLoading(false)
+          return
+        }
+
+        // Load transaction
+        const { data: transaction, error: txError } = await supabase
+          .from('transactions')
+          .select(`
+            *,
+            categories (
+              id,
+              name,
+              icon
+            )
+          `)
+          .eq('id', transactionId)
+          .single()
+
+        if (txError || !transaction) {
+          console.error('Error loading transaction:', txError)
+          router.back()
+          return
+        }
+
+        setOriginalTransaction(transaction)
+        setTransactionType(transaction.type === 'income' ? 'income' : 'expense')
+        setAmount(transaction.amount.toString())
+        setSelectedCategory(transaction.category_id)
+        setSelectedCategoryName(transaction.categories?.name || null)
+        setNote(transaction.description || '')
+        setSelectedDate(new Date(transaction.date))
+        setPayerId(
+          transaction.type === 'expense'
+            ? ((transaction as any).expense_payment_source === 'deposit' ? DEPOSIT_PAYER_ID : transaction.payer_id)
+            : ''
+        )
+        setDepositManagerId(transaction.type === 'income' && transaction.income_mode === 'deposit' ? transaction.payer_id : '')
+        setIncomeMode((transaction.income_mode === 'deposit' || transaction.income_mode === 'bonus') ? transaction.income_mode : 'personal')
+
+        // Participants are now loaded via useParticipants hook
+
+            // Load transaction splits for expense
+            if (transaction.type === 'expense') {
+              // Restore persisted UI state (preferred)
+              const hasPersistedSplitIds = typeof transaction.split_with_ids !== 'undefined'
+              const hasPersistedSplitAmounts = typeof transaction.split_with_amounts !== 'undefined'
+              const hasPersistedPublic = typeof transaction.is_public_expense !== 'undefined' || typeof transaction.public_amount !== 'undefined'
+
+              if (hasPersistedPublic) {
+                setIsPublicExpense(!!transaction.is_public_expense)
+                if (transaction.is_public_expense) {
+                  setPublicAmount(transaction.public_amount !== null && typeof transaction.public_amount !== 'undefined'
+                    ? String(transaction.public_amount)
+                    : '0')
+                  setPublicAmountManuallySet(true)
+                  setPublicShareParticipantIds(Array.isArray(transaction.public_share_participant_ids) ? transaction.public_share_participant_ids : [])
+                } else {
+                  setPublicAmount('')
+                  setPublicAmountManuallySet(false)
+                  setPublicShareParticipantIds([])
+                }
+              }
+
+              if (hasPersistedSplitIds) {
+                setSelectedParticipantIds(Array.isArray(transaction.split_with_ids) ? transaction.split_with_ids : [])
+              }
+
+              if (hasPersistedSplitAmounts && transaction.split_with_amounts && typeof transaction.split_with_amounts === 'object') {
+                const obj: Record<string, string> = {}
+                for (const [k, v] of Object.entries(transaction.split_with_amounts)) {
+                  const n = Number(v as any)
+                  if (!isNaN(n)) obj[k] = String(Math.ceil(n))
+                }
+                setCustomSplitAmounts(obj)
+              } else if (hasPersistedSplitAmounts) {
+                setCustomSplitAmounts({})
+              }
+
+              const { data: splits, error: splitsError } = await supabase
+                .from('transaction_splits')
+                .select('user_id, amount')
+                .eq('transaction_id', transactionId)
+
+              if (splitsError) {
+                handleError(splitsError, '載入分攤記錄失敗')
+              }
+
+              // Fallback for legacy rows (columns not present / not returned)
+              if ((!hasPersistedSplitIds && !hasPersistedSplitAmounts) && splits && splits.length > 0) {
+                const participantIds = splits.map((s: any) => s.user_id).filter(Boolean)
+                setSelectedParticipantIds(Array.from(new Set(participantIds)))
+                const obj: Record<string, string> = {}
+                splits.forEach((s: any) => {
+                  if (s?.user_id) obj[s.user_id] = String(Math.ceil(Number(s.amount || 0)))
+                })
+                setCustomSplitAmounts(obj)
+              }
+            }
+
+            // Restore income (deposit) split state
+            if (transaction.type === 'income' && transaction.categories?.name !== 'To receive from') {
+              const mode = transaction.income_mode === 'deposit' ? 'deposit' : 'personal'
+              if (mode === 'deposit') {
+                setDepositParticipantIds(Array.isArray(transaction.split_with_ids) ? transaction.split_with_ids : [])
+                if (transaction.split_with_amounts && typeof transaction.split_with_amounts === 'object') {
+                  const obj: Record<string, string> = {}
+                  for (const [k, v] of Object.entries(transaction.split_with_amounts)) {
+                    const n = Number(v as any)
+                    if (!isNaN(n)) obj[k] = String(Math.ceil(n))
+                  }
+                  setDepositSplitAmounts(obj)
+                } else {
+                  setDepositSplitAmounts({})
+                }
+              } else {
+                setDepositParticipantIds([])
+                setDepositSplitAmounts({})
+              }
+            }
+
+            // Note: "To receive from" category doesn't create transactions in add page,
+            // so if we're editing a transaction, it shouldn't have "To receive from" category.
+            // But we handle it for edge cases: if category is "To receive from", 
+            // try to load settlements (even though this shouldn't normally happen)
+            if (transaction.type === 'income' && transaction.categories?.name === 'To receive from') {
+              // Try to load settlements for this repayment (if any)
+              // Match by ledger_id and receiver_id (no date field in settlements in add page)
+              const { data: settlements, error: settlementsError } = await supabase
+                .from('settlements')
+                .select('sender_id')
+                .eq('ledger_id', transaction.ledger_id)
+                .eq('receiver_id', transaction.payer_id)
+                .limit(10) // Limit to avoid too many results
+
+              if (!settlementsError && settlements && settlements.length > 0) {
+                const participantIds = settlements.map(s => s.sender_id)
+                setRepaymentParticipantIds(participantIds)
+                setOriginalRepaymentParticipantIds(participantIds) // Store original for deletion
+              }
+            }
+      } catch (error) {
+        handleError(error, '載入交易資料失敗')
+        router.back()
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (transactionId && activeLedger) {
+      loadTransaction()
+    }
+  }, [transactionId, activeLedger, supabase, router])
+
+  useEffect(() => {
+    if (!isMultiMemberLedger) {
+      if (incomeMode === 'deposit') setIncomeMode('personal')
+      if (payerId === DEPOSIT_PAYER_ID) setPayerId(user?.id || '')
+    }
+  }, [isMultiMemberLedger, incomeMode, payerId, user?.id])
+
+  const handleKeypadInput = useCallback((value: string) => {
+    setAmount((prev) => {
+      if (prev === "0" && value !== "." && !["+", "-", "×", "÷"].includes(value)) {
+        return value;
+      }
+
+      if (value === ".") {
+        // Split by operators to find the last numeric part
+        const parts = prev.split(/[+\-×÷]/);
+        const lastPart = parts[parts.length - 1];
+        if (lastPart.includes(".")) {
+          return prev;
+        }
+      }
+
+      if (["+", "-", "×", "÷"].includes(value)) {
+        if (["+", "-", "×", "÷"].includes(prev.slice(-1))) {
+          return prev.slice(0, -1) + value;
+        }
+        return prev + value;
+      }
+      return prev + value;
+    });
+  }, []);
+
+  const handleClear = useCallback(() => {
+    setAmount("0");
+  }, []);
+
+  const handleBackspace = useCallback(() => {
+    setAmount((prev) => {
+      if (prev.length <= 1) return "0";
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  const handleCalculate = useCallback(() => {
+    try {
+      let expression = amount
+        .replace(/×/g, "*")
+        .replace(/÷/g, "/")
+        .replace(/[^0-9+\-*/.() ]/g, "");
+      
+      if (!expression || expression === "0") {
+        return;
+      }
+
+      const result = Function(`"use strict"; return (${expression})`)();
+      const numResult = Number(result);
+      
+      if (isNaN(numResult) || !isFinite(numResult)) {
+        return;
+      }
+
+      const formatted = numResult % 1 === 0 
+        ? numResult.toString() 
+        : numResult.toFixed(2).replace(/\.?0+$/, "");
+      
+      setAmount(formatted);
+    } catch {
+      // Invalid expression, keep current amount
+    }
+  }, [amount]);
+
+  const handleConfirmAmount = useCallback(() => {
+    if (amount.includes("+") || amount.includes("×") || amount.includes("÷") || (amount.includes("-") && amount.split("-").length > 2)) {
+      handleCalculate();
+    }
+    const num = parseFloat(amount);
+    if (!isNaN(num) && num > 0 && !amount.includes("+") && !amount.includes("×") && !amount.includes("÷") && !(amount.includes("-") && amount.split("-").length > 2)) {
+      setShowKeypad(false);
+    }
+  }, [amount, handleCalculate]);
+
+  const toLocalDateString = useCallback((date: Date) => {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }, [])
+
+  // Auto-calculate shared expense amount when total changes (same behavior as /add)
+  useEffect(() => {
+    if (isPublicExpense && amount) {
+      const totalAmount = parseFloat(amount) || 0
+      if (totalAmount > 0) {
+        const totalInt = Math.ceil(totalAmount)
+        const memberCount = Math.max(1, participants.length || 1)
+
+        const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+          const v = customSplitAmounts[id]
+          const n = Number(v)
+          if (v === undefined || v === '' || isNaN(n) || n <= 0) return sum
+          return sum + Math.ceil(n)
+        }, 0)
+
+        const calculatedPublicAmount = sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / memberCount)
+
+        if (!publicAmountManuallySet) {
+          setPublicAmount(calculatedPublicAmount.toString())
+          setPublicAmountManuallySet(false)
+        }
+      }
+    } else {
+      setPublicAmount('')
+      setPublicAmountManuallySet(false)
+    }
+  }, [amount, isPublicExpense, publicAmountManuallySet, participants.length, selectedParticipantIds, customSplitAmounts])
+
+  const computeCustomSplits = useCallback((total: number, ids: string[], overrideAmounts?: Record<string, string>) => {
+    const totalInt = Math.max(0, Math.ceil(Number(total) || 0))
+    const normalizedIds = ids.filter(Boolean)
+    const amountsMap = overrideAmounts ?? customSplitAmounts
+    const fixed: Record<string, number> = {}
+    let fixedSum = 0
+    const remainingIds: string[] = []
+
+    for (const id of normalizedIds) {
+      const v = amountsMap[id]
+      if (v === undefined || v === '') {
+        remainingIds.push(id)
+        continue
+      }
+      const n = Number(v)
+      if (!isNaN(n) && n >= 0) {
+        const amt = Math.ceil(n)
+        fixed[id] = amt
+        fixedSum += amt
+      } else {
+        remainingIds.push(id)
+      }
+    }
+
+    if (fixedSum > totalInt) {
+      return { ok: false as const, amounts: {} as Record<string, number> }
+    }
+
+    const remaining = totalInt - fixedSum
+    const autoCount = remainingIds.length
+    const autoAmounts: Record<string, number> = {}
+    if (autoCount > 0) {
+      // Everyone rounds up to integer; any extra due to rounding belongs to payer.
+      const per = Math.ceil(remaining / autoCount)
+      for (let i = 0; i < remainingIds.length; i++) {
+        const id = remainingIds[i]
+        autoAmounts[id] = per
+      }
+    }
+
+    const amounts: Record<string, number> = {}
+    for (const id of normalizedIds) {
+      if (fixed[id] !== undefined) amounts[id] = fixed[id]
+      else amounts[id] = autoAmounts[id] ?? 0
+    }
+
+    return { ok: true as const, amounts }
+  }, [customSplitAmounts])
+
+  const isValidAmount = () => {
+    const num = parseFloat(amount);
+    return (
+      amount !== "0" &&
+      !isNaN(num) &&
+      num > 0 &&
+      !amount.includes("+") &&
+      !amount.includes("×") &&
+      !amount.includes("÷") &&
+      !(amount.includes("-") && amount.split("-").length > 2)
+    );
+  };
+
+  // Update selectedCategoryName when selectedCategory changes
+  useEffect(() => {
+    const fetchCategoryName = async () => {
+      if (!selectedCategory) {
+        setSelectedCategoryName(null);
+        setRepaymentParticipantIds([]); // Clear repayment participants when no category selected
+        return;
+      }
+
+      try {
+        const { data: category } = await supabase
+          .from('categories')
+          .select('name')
+          .eq('id', selectedCategory)
+          .maybeSingle();
+        
+        const categoryName = category?.name || null;
+        setSelectedCategoryName(categoryName);
+        
+        // Clear repayment participants if category is not "To receive from"
+        if (categoryName !== 'To receive from') {
+          setRepaymentParticipantIds([]);
+        }
+      } catch (error) {
+        console.error('Error fetching category name:', error);
+        setSelectedCategoryName(null);
+        setRepaymentParticipantIds([]);
+      }
+    };
+
+    fetchCategoryName();
+  }, [selectedCategory, supabase]);
+
+  const handleSave = async () => {
+    if (saving) return
+
+    if (!isValidAmount()) {
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      if (isSettlement && settlementId) {
+        const finalAmount = parseFloat(amount)
+        if (isNaN(finalAmount) || finalAmount <= 0) {
+          handleError(null, '請輸入有效金額')
+          setSaving(false)
+          return
+        }
+
+        const isReceiver = transactionType === 'income'
+        const counterpartyId = repaymentParticipantIds[0]
+
+        if (!counterpartyId) {
+          handleError(null, '請選擇對象')
+          setSaving(false)
+          return
+        }
+
+        const { error: updateError } = await supabase
+          .from('settlements')
+          .update({ 
+            amount: Math.round(finalAmount * 100) / 100,
+            sender_id: isReceiver ? counterpartyId : user.id,
+            receiver_id: isReceiver ? user.id : counterpartyId,
+            date: selectedDate.toISOString(), // 同時更新 date
+            created_at: selectedDate.toISOString(), // 與 created_at
+            note: note?.trim() || null
+          })
+          .eq('id', settlementId)
+
+        if (updateError) {
+          handleError(updateError, '更新還款失敗')
+          setSaving(false)
+          return
+        }
+
+        queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false })
+        queryClient.invalidateQueries({ queryKey: ['settlements'], exact: false })
+        queryClient.invalidateQueries({ queryKey: ['outstandingTotal'], exact: false })
+        router.back()
+        return
+      }
+
+      if (!selectedCategory) {
+        handleError(null, '請選擇類別')
+        setSaving(false)
+        return
+      }
+
+      if (!activeLedger || !activeLedger.id) {
+        handleError(null, '未找到活動帳本')
+        setSaving(false)
+        return
+      }
+
+      const finalAmount = parseFloat(amount)
+      const ledgerId = activeLedger.id
+      const ledgerType = activeLedger.type
+      // Save as local date-only string to avoid timezone shifting (off-by-one day)
+      const transactionDate = toLocalDateString(selectedDate)
+      const totalAmount = finalAmount
+      const totalInt = Math.ceil(totalAmount)
+
+      if (transactionType === "income") {
+        // Income mode: Check if repayment category is selected (check by category name)
+        let isRepaymentCategory = false;
+        if (selectedCategory) {
+          const { data: category } = await supabase
+            .from('categories')
+            .select('name')
+            .eq('id', selectedCategory)
+            .maybeSingle();
+          
+          if (category?.name === 'To receive from') {
+            isRepaymentCategory = true;
+          }
+        }
+
+        if (isRepaymentCategory) {
+          // Repayment category: Write to settlements table only (not transactions)
+          if (repaymentParticipantIds.length === 0) {
+            handleError(null, "請選擇還款對象");
+            setSaving(false);
+            return;
+          }
+
+          // Delete old settlements that were associated with this transaction
+          // Only delete if we have original repayment participants (meaning it was repayment before)
+          // Match by ledger_id, receiver_id, and sender_id in the original list
+          let deleteError: any = null;
+          if (originalRepaymentParticipantIds.length > 0) {
+            const { error } = await supabase
+              .from('settlements')
+              .delete()
+              .eq('ledger_id', ledgerId)
+              .eq('receiver_id', user.id)
+              .in('sender_id', originalRepaymentParticipantIds)
+
+            deleteError = error;
+          } else {
+            // If no original repayment participants, this means it was originally a general income transaction
+            // In this case, we don't need to delete old settlements (there shouldn't be any)
+            // Just proceed to create new settlements
+          }
+
+          if (deleteError) {
+            handleError(deleteError, '刪除舊還款記錄失敗')
+            setSaving(false)
+            return
+          }
+
+          // Create new settlements
+          const settlementRecords = repaymentParticipantIds.map((participantId) => {
+            const settlementData: any = {
+              sender_id: participantId,
+              receiver_id: user.id,
+              amount: Math.round((totalAmount / repaymentParticipantIds.length) * 100) / 100,
+            };
+            settlementData.ledger_id = ledgerId;
+            return settlementData;
+          });
+
+          const { error: settlementError } = await supabase
+            .from("settlements")
+            .insert(settlementRecords);
+
+          if (settlementError) {
+            handleError(settlementError, '保存還款記錄失敗');
+            setSaving(false);
+            return;
+          }
+
+          // Delete the transaction (repayment doesn't use transactions table)
+          const { error: deleteTxError } = await supabase
+            .from('transactions')
+            .delete()
+            .eq('id', transactionId)
+
+          if (deleteTxError) {
+            handleError(deleteTxError, '刪除交易失敗')
+            setSaving(false)
+            return
+          }
+
+          // Success: Refresh and navigate back
+          await refreshLedgers()
+          // Invalidate caches so previous screen auto-refreshes
+          queryClient.invalidateQueries({ queryKey: ['transactions', ledgerId, ledgerType], exact: false })
+          queryClient.invalidateQueries({ queryKey: ['ledgerBalance', ledgerId, ledgerType], exact: false })
+          router.back()
+          return
+        } else {
+          // General income: Update transaction with category
+          // Delete old settlements if any (in case it was repayment before)
+          // Only delete if we have original repayment participants (meaning it was repayment before)
+          if (originalRepaymentParticipantIds.length > 0) {
+            await supabase
+              .from('settlements')
+              .delete()
+              .eq('ledger_id', ledgerId)
+              .eq('receiver_id', user.id)
+              .in('sender_id', originalRepaymentParticipantIds)
+          }
+
+          const categoryId: string | null = selectedCategory; // Use selectedCategory directly
+          if (incomeMode === 'deposit') {
+            if (!isMultiMemberLedger) {
+              handleError(null, '此帳本無其他成員，無法使用儲值金')
+              setSaving(false)
+              return
+            }
+            if (!depositManagerId) {
+              handleError(null, '請選擇管理者/收款者')
+              setSaving(false)
+              return
+            }
+            if (depositParticipantIds.length === 0) {
+              handleError(null, '請選擇出資者')
+              setSaving(false)
+              return
+            }
+
+            const totalInt = Math.ceil(finalAmount)
+            const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts)
+            if (!computed.ok) {
+              handleError(null, '分攤金額不可超過總金額')
+              setSaving(false)
+              return
+            }
+            const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0)
+            const incomeAmount = Math.ceil(splitSum)
+
+            const { error: updateError } = await supabase
+              .from('transactions')
+              .update({
+                amount: incomeAmount,
+                type: 'income',
+                income_mode: 'deposit',
+                category_id: categoryId,
+                description: note?.trim() || null,
+                date: transactionDate,
+                payer_id: depositManagerId,
+                split_with_ids: depositParticipantIds,
+                split_with_amounts: (() => {
+                  const obj: Record<string, number> = {}
+                  depositParticipantIds.forEach((id) => {
+                    obj[id] = Math.ceil(computed.amounts[id] || 0)
+                  })
+                  return obj
+                })(),
+                is_public_expense: false,
+                public_amount: null,
+                public_share_participant_ids: null,
+              })
+              .eq('id', transactionId)
+
+            if (updateError) {
+              handleError(updateError, '更新交易失敗')
+              setSaving(false)
+              return
+            }
+
+            await supabase.from('transaction_splits').delete().eq('transaction_id', transactionId)
+
+            const splitRecords = depositParticipantIds.map((id) => ({
+              transaction_id: transactionId,
+              ledger_id: ledgerType === 'ledger' ? ledgerId : null,
+              book_id: ledgerType === 'account_book' ? ledgerId : null,
+              user_id: id,
+              amount: Math.ceil(computed.amounts[id] || 0),
+            }))
+
+            if (splitRecords.length > 0) {
+              const { error: splitError } = await supabase.from('transaction_splits').insert(splitRecords)
+              if (splitError) {
+                handleError(splitError, '保存分攤失敗')
+                setSaving(false)
+                return
+              }
+            }
+          } else {
+            const { error: updateError } = await supabase
+              .from('transactions')
+              .update({
+                amount: finalAmount,
+                type: 'income',
+                income_mode: 'personal',
+                category_id: categoryId,
+                description: note?.trim() || null,
+                date: transactionDate,
+                payer_id: user.id,
+                split_with_ids: [],
+                split_with_amounts: null,
+                is_public_expense: false,
+                public_amount: null,
+                public_share_participant_ids: null,
+              })
+              .eq('id', transactionId)
+
+            if (updateError) {
+              handleError(updateError, '更新交易失敗')
+              setSaving(false)
+              return
+            }
+
+            await supabase.from('transaction_splits').delete().eq('transaction_id', transactionId)
+
+            // Add split record for personal income
+            await supabase
+              .from("transaction_splits")
+              .insert({
+                transaction_id: transactionId,
+                ledger_id: ledgerType === 'ledger' ? ledgerId : null,
+                book_id: ledgerType === 'account_book' ? ledgerId : null,
+                user_id: user.id,
+                amount: finalAmount,
+              });
+          }
+        }
+      } else {
+        if (payerId === DEPOSIT_PAYER_ID && !isMultiMemberLedger) {
+          handleError(null, '此帳本無其他成員，無法使用儲值金')
+          setSaving(false)
+          return
+        }
+        if (payerId === DEPOSIT_PAYER_ID) {
+          const scopeColumn = ledgerType === 'ledger' ? 'ledger_id' : 'book_id'
+          const [incomeResult, expenseResult] = await Promise.all([
+            supabase
+              .from('transactions')
+              .select('amount')
+              .eq(scopeColumn, ledgerId)
+              .eq('type', 'income')
+              .eq('income_mode', 'deposit'),
+            supabase
+              .from('transactions')
+              .select('amount')
+              .eq(scopeColumn, ledgerId)
+              .eq('type', 'expense')
+              .eq('expense_payment_source', 'deposit'),
+          ])
+
+          if (incomeResult.error || expenseResult.error) {
+            handleError(incomeResult.error || expenseResult.error, '無法取得儲值金餘額')
+            setSaving(false)
+            return
+          }
+
+          const depositIncome = incomeResult.data?.reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0) || 0
+          const depositExpense = expenseResult.data?.reduce((sum: number, t: any) => sum + Number(t.amount || 0), 0) || 0
+          const currentDepositBalance = depositIncome - depositExpense
+
+          const originalWasDepositExpense =
+            originalTransaction?.type === 'expense' && originalTransaction?.expense_payment_source === 'deposit'
+          const availableDepositBalance = currentDepositBalance + (originalWasDepositExpense ? Number(originalTransaction?.amount || 0) : 0)
+
+          if (totalInt > availableDepositBalance) {
+            handleError(null, '儲值金不足，無法保存')
+            setSaving(false)
+            return
+          }
+        }
+
+        // Expense mode: Update transaction and splits (supports Shared expense like /add)
+        const categoryId: string | null = selectedCategory
+        if (isPublicExpense) {
+          const p = parseFloat(publicAmount)
+          if (!publicAmount || isNaN(p) || p <= 0) {
+            handleError(null, '請輸入公費金額')
+            setSaving(false)
+            return
+          }
+          if (totalInt > 0 && !isNaN(p) && Math.ceil(p) > totalInt) {
+            handleError(null, '公費不可超過總金額')
+            setSaving(false)
+            return
+          }
+        }
+
+        const { error: updateError } = await supabase
+          .from('transactions')
+          .update({
+            amount: totalInt,
+            type: transactionType,
+            category_id: categoryId,
+            description: note?.trim() || null,
+            date: transactionDate,
+            payer_id: payerId === DEPOSIT_PAYER_ID ? null : (payerId || user.id),
+            split_with_ids: selectedParticipantIds || [],
+            split_with_amounts: (() => {
+              const obj: Record<string, number> = {}
+              ;(selectedParticipantIds || []).forEach((id) => {
+                const v = customSplitAmounts[id]
+                const n = Number(v)
+                if (v !== undefined && v !== '' && !isNaN(n) && n >= 0) {
+                  obj[id] = Math.ceil(n)
+                }
+              })
+              return Object.keys(obj).length > 0 ? obj : null
+            })(),
+            is_public_expense: !!isPublicExpense,
+            public_amount: isPublicExpense ? Math.ceil(parseFloat(publicAmount) || 0) : null,
+            public_share_participant_ids:
+              isPublicExpense && publicShareParticipantIds.length > 0 ? publicShareParticipantIds : null,
+            expense_payment_source: payerId === DEPOSIT_PAYER_ID ? 'deposit' : 'personal',
+          })
+          .eq('id', transactionId)
+
+        if (updateError) {
+          handleError(updateError, '更新交易失敗')
+          setSaving(false)
+          return
+        }
+
+        // Delete old splits
+        await supabase
+          .from('transaction_splits')
+          .delete()
+          .eq('transaction_id', transactionId)
+
+        // Create new splits
+        const effectiveSplitWithIds =
+          selectedParticipantIds.length > 0
+            ? selectedParticipantIds
+            : payerId === DEPOSIT_PAYER_ID
+              ? participants.map((p) => p.id).filter(Boolean)
+              : payerId
+                ? [payerId]
+                : []
+        if (effectiveSplitWithIds.length > 0) {
+          let splitRecords: Array<{ transaction_id: string; ledger_id: string | null; book_id: string | null; user_id: string; amount: number }> = []
+
+          if (isPublicExpense) {
+            const finalPayerId = payerId === DEPOSIT_PAYER_ID ? DEPOSIT_PAYER_ID : (payerId || user.id)
+            const memberCount = Math.max(1, participants.length || 1)
+            const rawPublicAmount =
+              publicAmount && parseFloat(publicAmount) > 0
+                ? parseFloat(publicAmount)
+                : totalInt / memberCount
+            const publicInt = Math.ceil(Math.max(0, Math.min(rawPublicAmount, totalInt)))
+
+            const remainingAmount = totalInt - publicInt
+
+            // Public Share participants:
+            // - If none selected: ALL members share
+            // - If selected: ONLY selected participants share (do NOT force-include payer)
+            const defaultPublicShareIds = participants.map((p) => p.id)
+            const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
+            const publicShareParticipants = Array.from(new Set(basePublicShareIds))
+            const publicShareCount = publicShareParticipants.length
+
+            if (publicShareCount === 0) {
+              handleError(null, '請選擇公費分攤對象')
+              setSaving(false)
+              return
+            }
+
+            // Public share: everyone rounds up; extra belongs to payer.
+            const publicSharePerPerson = Math.ceil(publicInt / publicShareCount)
+
+            // Personal share: Split with participants (empty => payer-only), allow custom amounts
+            const personalShareParticipants = effectiveSplitWithIds.length > 0 ? effectiveSplitWithIds : [finalPayerId]
+            const personalShares = computeCustomSplits(remainingAmount, personalShareParticipants)
+            if (!personalShares.ok) {
+              handleError(null, '分攤金額不可超過總金額')
+              setSaving(false)
+              return
+            }
+
+            // Debtors: union of selected participants + public share participants (exclude payer)
+            const allDebtorIds = Array.from(new Set([...effectiveSplitWithIds, ...basePublicShareIds])).filter(
+              (id) => id !== finalPayerId
+            )
+
+            splitRecords = allDebtorIds.map((participantId) => {
+              const isInPublicShare = publicShareParticipants.includes(participantId)
+              const publicShare = isInPublicShare ? publicSharePerPerson : 0
+              const isPersonalShare = personalShareParticipants.includes(participantId)
+              const personalShare = isPersonalShare ? (personalShares.amounts[participantId] || 0) : 0
+              const totalDebt = Math.ceil(publicShare + personalShare)
+
+              return {
+                transaction_id: transactionId,
+                ledger_id: ledgerType === 'ledger' ? ledgerId : null,
+                book_id: ledgerType === 'account_book' ? ledgerId : null,
+                user_id: participantId,
+                amount: totalDebt,
+              }
+            }).filter((r) => r.amount > 0)
+          } else {
+            // Regular expense: split among Split with participants (empty => payer-only)
+            const custom = computeCustomSplits(totalInt, effectiveSplitWithIds)
+            if (!custom.ok) {
+              handleError(null, '分攤金額不可超過總金額')
+              setSaving(false)
+              return
+            }
+            splitRecords = effectiveSplitWithIds.map((participantId) => ({
+              transaction_id: transactionId,
+              ledger_id: ledgerType === 'ledger' ? ledgerId : null,
+              book_id: ledgerType === 'account_book' ? ledgerId : null,
+              user_id: participantId,
+              amount: Math.ceil(custom.amounts[participantId] || 0),
+            }))
+          }
+
+          if (splitRecords.length > 0) {
+            await supabase
+              .from('transaction_splits')
+              .insert(splitRecords)
+          }
+        }
+      }
+
+      await refreshLedgers()
+      // Invalidate caches so previous screen auto-refreshes
+      await queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false })
+      await queryClient.invalidateQueries({ queryKey: ['settlements'], exact: false })
+      await queryClient.invalidateQueries({ queryKey: ['ledgerBalance'], exact: false })
+      await queryClient.invalidateQueries({ queryKey: ['outstandingTotal'], exact: false })
+      router.back()
+    } catch (error) {
+      handleError(error, '保存交易失敗')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (deleting) return
+    if (!activeLedger?.id) return
+
+    setDeleting(true)
+
+    try {
+      if (isSettlement && settlementId) {
+        const { error: deleteError } = await supabase
+          .from('settlements')
+          .delete()
+          .eq('id', settlementId)
+
+        if (deleteError) {
+          handleError(deleteError, '刪除還款失敗')
+          setDeleting(false)
+          return
+        }
+
+        await queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false })
+        await queryClient.invalidateQueries({ queryKey: ['settlements'], exact: false })
+        await queryClient.invalidateQueries({ queryKey: ['outstandingTotal'], exact: false })
+        await queryClient.invalidateQueries({ queryKey: ['ledgerBalance'], exact: false })
+        router.back()
+        return
+      }
+
+      if (!originalTransaction) {
+        setDeleting(false)
+        return
+      }
+
+      // Delete transaction splits first (if any)
+      await supabase
+        .from('transaction_splits')
+        .delete()
+        .eq('transaction_id', transactionId)
+
+      // Delete settlements (if any) - match by ledger_id and receiver_id
+      // Note: settlements in add page don't have date field, so we match without it
+      if (originalTransaction.type === 'income') {
+        await supabase
+          .from('settlements')
+          .delete()
+          .eq('ledger_id', originalTransaction.ledger_id)
+          .eq('receiver_id', originalTransaction.payer_id)
+      }
+
+      // Delete transaction
+      const { error: deleteError } = await supabase
+        .from('transactions')
+        .delete()
+        .eq('id', transactionId)
+
+      if (deleteError) {
+        handleError(deleteError, '刪除交易失敗')
+        setDeleting(false)
+        return
+      }
+
+      await refreshLedgers()
+      // Invalidate caches so previous screen auto-refreshes
+      await queryClient.invalidateQueries({ queryKey: ['transactions'], exact: false })
+      await queryClient.invalidateQueries({ queryKey: ['ledgerBalance'], exact: false })
+      await queryClient.invalidateQueries({ queryKey: ['outstandingTotal'], exact: false })
+      await queryClient.invalidateQueries({ queryKey: ['settlements'], exact: false })
+      router.back()
+    } catch (error) {
+      handleError(error, '刪除交易失敗')
+    } finally {
+      setDeleting(false)
+      setShowDeleteModal(false)
+    }
+  }
+
+  const formatDate = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${month}/${day}/${year}`
+  }
+
+  // Calculate splits for expense display
+  const calculateSplits = useCallback(() => {
+    const totalAmount = parseFloat(amount) || 0
+    const totalInt = Math.ceil(totalAmount)
+    const effectiveSplitWithIds =
+      selectedParticipantIds.length > 0
+        ? selectedParticipantIds
+        : payerId === DEPOSIT_PAYER_ID
+          ? participants.map((p) => p.id).filter(Boolean)
+          : payerId
+            ? [payerId]
+            : []
+    if (totalAmount <= 0 || !payerId) {
+      return { payer: null, debtors: [] }
+    }
+
+    const payer = expensePayerOptions().find((p) => p.id === payerId)
+    if (!payer) {
+      return { payer: null, debtors: [] }
+    }
+
+    const finalPayerId = payerId
+
+    if (isPublicExpense) {
+      const rawPublicAmount =
+        publicAmount && parseFloat(publicAmount) > 0
+          ? parseFloat(publicAmount)
+          : totalInt / Math.max(1, participants.length || 1)
+      const finalPublicAmount = Math.ceil(Math.max(0, Math.min(rawPublicAmount, totalInt)))
+
+      const remainingAmount = totalInt - finalPublicAmount
+
+      const defaultPublicShareIds = participants.map((p) => p.id)
+      const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
+      const publicShareParticipants = Array.from(new Set(basePublicShareIds))
+      const publicShareCount = publicShareParticipants.length
+      if (publicShareCount === 0) {
+        return { payer: null, debtors: [] }
+      }
+
+      const publicSharePerPerson = Math.ceil(finalPublicAmount / publicShareCount)
+
+      const personalShareParticipants = effectiveSplitWithIds.length > 0 ? effectiveSplitWithIds : [finalPayerId]
+      const personalShares = computeCustomSplits(remainingAmount, personalShareParticipants)
+      if (!personalShares.ok) {
+        return { payer: null, debtors: [] }
+      }
+
+      const allDebtorIds = Array.from(new Set([...effectiveSplitWithIds, ...basePublicShareIds])).filter(
+        (id) => id !== finalPayerId
+      )
+
+      const debtors = allDebtorIds
+        .map((participantId) => {
+          const participant = participants.find((p) => p.id === participantId)
+          if (!participant) return null
+
+          const isInPublicShare = publicShareParticipants.includes(participantId)
+          const publicIndex = publicShareParticipants.indexOf(participantId)
+          const publicShare = isInPublicShare ? publicSharePerPerson : 0
+
+          const isPersonalShare = personalShareParticipants.includes(participantId)
+          const personalShare = isPersonalShare ? (personalShares.amounts[participantId] || 0) : 0
+
+          const totalDebt = Math.ceil(publicShare + personalShare)
+          return totalDebt > 0 ? { participant, amount: totalDebt } : null
+        })
+        .filter((d): d is { participant: Participant; amount: number } => d !== null)
+
+      const totalAmountToCollect = debtors.reduce((sum, debtor) => sum + debtor.amount, 0)
+      const payerOutOfPocket = Math.max(0, totalInt - totalAmountToCollect)
+
+      return {
+        payer: {
+          participant: payer,
+          amount: Math.ceil(payerOutOfPocket),
+        },
+        debtors,
+      }
+    }
+
+    // Regular expense
+    const otherParticipants = effectiveSplitWithIds.filter((id) => id !== finalPayerId)
+
+    if (otherParticipants.length === 0) {
+      return {
+        payer: {
+          participant: payer,
+          amount: totalInt,
+        },
+        debtors: [],
+      }
+    }
+
+    const custom = computeCustomSplits(totalInt, effectiveSplitWithIds)
+    if (!custom.ok) {
+      return { payer: null, debtors: [] }
+    }
+    const debtors = otherParticipants
+      .map((id) => {
+        const participant = participants.find((p) => p.id === id)
+        if (!participant) return null
+        return {
+          participant,
+          amount: Math.ceil(custom.amounts[id] || 0),
+        }
+      })
+      .filter((d): d is { participant: Participant; amount: number } => d !== null)
+
+    const totalAmountToCollect = debtors.reduce((sum, debtor) => sum + debtor.amount, 0)
+    const payerOutOfPocket = Math.max(0, totalInt - totalAmountToCollect)
+
+    return {
+      payer: {
+        participant: payer,
+        amount: Math.ceil(payerOutOfPocket),
+      },
+      debtors,
+    }
+  }, [amount, selectedParticipantIds, payerId, participants, isPublicExpense, publicAmount, publicShareParticipantIds, computeCustomSplits])
+
+  const { payer, debtors } = transactionType === 'expense' ? calculateSplits() : { payer: null, debtors: [] }
+
+  // Validation logic for save button
+  const canSave = () => {
+    // Must have valid amount
+    if (!isValidAmount()) {
+      return false;
+    }
+
+    // For repayments (settlements)
+    if (isSettlement) {
+      return repaymentParticipantIds.length > 0;
+    }
+
+    // Must have selected category for regular transactions
+    if (!selectedCategory) {
+      return false;
+    }
+
+    // Must have active ledger
+    if (!activeLedger || !activeLedger.id) {
+      return false;
+    }
+
+    if (transactionType === 'expense' && !payerId) {
+      return false
+    }
+
+    // For "To receive from" category (only in income mode), must have repayment participants
+    if (transactionType === "income" && selectedCategoryName === 'To receive from') {
+      if (repaymentParticipantIds.length === 0) {
+        return false;
+      }
+    }
+
+    if (transactionType === 'income' && selectedCategoryName !== 'To receive from') {
+      if (incomeMode === 'deposit') {
+        if (!depositManagerId) return false
+        if (depositParticipantIds.length === 0) return false
+      }
+    }
+
+    if (transactionType === 'expense' && isPublicExpense) {
+      const total = Math.ceil(parseFloat(amount) || 0)
+      const p = parseFloat(publicAmount)
+      if (!publicAmount || isNaN(p) || p <= 0) {
+        return false
+      }
+      if (total > 0 && !isNaN(p) && Math.ceil(p) > total) {
+        return false
+      }
+    }
+
+    return true;
+  };
+
+  if (loading) {
+    return (
+      <>
+        <ErrorToast
+          message={error?.message || ''}
+          isVisible={isErrorVisible}
+          onClose={clearError}
+          details={error?.details}
+        />
+        <Loading fullScreen message="載入中..." />
+      </>
+    )
+  }
+
+  if (isSettlement) {
+    const isReceiver = transactionType === 'income';
+    const title = '收到還款'
+
+    return (
+      <>
+        <ErrorToast
+          message={error?.message || ''}
+          isVisible={isErrorVisible}
+          onClose={clearError}
+          details={error?.details}
+        />
+        <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto">
+          <header className="pt-8 pb-4 px-6 flex flex-col gap-4 z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
+            <div className="flex items-center justify-between w-full">
+              <button
+                onClick={() => router.back()}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all text-text-muted hover:text-text-main"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold text-text-main">{title}</h1>
+              <div className="w-10"></div>
+            </div>
+          </header>
+
+          <main className="flex-1 overflow-y-auto no-scrollbar pb-32 px-6">
+            <div className="mt-4 mb-8 text-center relative z-[101]">
+              <div className="flex items-center justify-center gap-3 mx-auto w-full max-w-[320px]">
+                <span className="text-3xl font-bold text-primary">$</span>
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowKeypad(true)
+                  }}
+                  className="bg-white rounded-pill py-4 px-8 shadow-sm border border-gray-100 flex items-center justify-center min-w-[120px] max-w-[240px] cursor-pointer break-all whitespace-pre-wrap text-5xl font-bold text-primary"
+                >
+                  {amount}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4" onClick={() => setShowKeypad(false)}>
+              {/* Counterparty Selection */}
+              <div className="bg-white p-5 rounded-card shadow-sm">
+                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
+                  {isReceiver ? '還款人 (From)' : '收款人 (To)'}
+                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex -space-x-3 overflow-hidden p-1">
+                    {repaymentParticipantIds.map((id, index) => {
+                      const participant = participants.find((p) => p.id === id)
+                      if (!participant) return null
+                      return (
+                        <div
+                          key={id}
+                          className="h-10 w-10 rounded-full ring-2 ring-white bg-secondary flex items-center justify-center text-white text-xs font-bold overflow-hidden"
+                          style={{ zIndex: repaymentParticipantIds.length - index }}
+                        >
+                          {participant.avatar ? (
+                            <img alt={participant.name} src={participant.avatar} className="w-full h-full object-cover" />
+                          ) : (
+                            (participant.name === 'You' ? 'You' : participant.name[0])
+                          )}
+                        </div>
+                      )
+                    })}
+                    {repaymentParticipantIds.length === 0 && (
+                      <div className="h-10 w-10 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-xs">
+                        👤
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowKeypad(false)
+                      setTimeout(() => setShowRepaymentModal(true), 100)
+                    }}
+                    className="text-primary text-sm font-semibold hover:text-primary/80 transition-colors"
+                  >
+                    編輯對象
+                  </button>
+                </div>
+              </div>
+
+              {/* Note/Description */}
+              <div className="bg-white p-5 rounded-card shadow-sm">
+                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                  還款備註
+                </label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="還款來源或備註"
+                  className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                />
+              </div>
+
+              {/* Date */}
+              <div className="bg-white p-5 rounded-card shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-text-muted">
+                      <span className="material-symbols-outlined">calendar_today</span>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-text-main">日期</h4>
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowKeypad(false)
+                      setShowDatePicker(true)
+                    }}
+                    className="bg-transparent border-none text-right text-text-muted font-medium focus:ring-0 p-0 text-sm"
+                  >
+                    {formatSimpleDate(selectedDate)}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </main>
+
+          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+              >
+                <span className="material-symbols-outlined">delete</span>
+                刪除
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !canSave()}
+                className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors ${
+                  saving || !canSave() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
+                }`}
+              >
+                {saving ? '儲存中...' : '儲存'}
+              </button>
+            </div>
+          </div>
+
+          {showDeleteModal && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+              <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setShowDeleteModal(false)}></div>
+              <div className="relative w-full max-w-[340px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col items-center text-center transform transition-all animate-in fade-in zoom-in duration-200">
+                <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
+                  <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
+                </div>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">確認刪除</h3>
+                <p className="text-slate-500 text-sm mb-8 leading-relaxed px-2">
+                  確定要刪除這筆交易嗎？此動作將無法復原。
+                </p>
+                <div className="grid grid-cols-2 gap-4 w-full">
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className={`py-3.5 px-4 rounded-2xl font-bold text-sm shadow-lg transition-colors ${
+                      deleting ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30'
+                    }`}
+                  >
+                    {deleting ? '刪除中...' : '刪除'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showDatePicker && (
+            <DatePickerModal
+              isOpen={showDatePicker}
+              onClose={() => setShowDatePicker(false)}
+              onConfirm={(date) => {
+                setSelectedDate(date)
+                setShowDatePicker(false)
+              }}
+              initialDate={selectedDate}
+            />
+          )}
+
+          {showRepaymentModal && (
+            <SelectParticipants
+              isOpen={showRepaymentModal}
+              onClose={() => setShowRepaymentModal(false)}
+              onConfirm={(ids) => {
+                setRepaymentParticipantIds(ids)
+                setShowRepaymentModal(false)
+              }}
+              participants={participants.filter((p) => p.id !== user?.id)}
+              selectedIds={repaymentParticipantIds}
+              payerId={null}
+              allowEmpty={false}
+              single={true}
+            />
+          )}
+
+          {showKeypad && (
+            <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-none">
+              <div
+                className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity pointer-events-auto"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowKeypad(false)
+                }}
+              ></div>
+              <div className="relative w-full max-w-md pointer-events-auto z-[101]">
+                <NumericKeypad
+                  onInput={handleKeypadInput}
+                  onClear={handleClear}
+                  onBackspace={handleBackspace}
+                  onCalculate={handleCalculate}
+                  onSave={handleConfirmAmount}
+                  canSave={true}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <ErrorToast
+        message={error?.message || ''}
+        isVisible={isErrorVisible}
+        onClose={clearError}
+        details={error?.details}
+      />
+    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto">
+          <header className="pt-8 pb-4 px-6 flex flex-col gap-4 z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
+            <div className="flex items-center justify-between w-full">
+              <button
+                onClick={() => router.back()}
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all text-text-muted hover:text-text-main"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h1 className="text-lg font-bold text-text-main">編輯交易</h1>
+              <div className="w-10"></div>
+            </div>
+        <div className="w-full flex justify-center">
+          <div className="bg-white p-1 rounded-full border border-gray-100 flex relative w-64 shadow-sm">
+            <button
+              onClick={() => setTransactionType('expense')}
+              className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${
+                transactionType === 'expense'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-text-muted hover:text-text-main'
+              }`}
+            >
+              支出
+            </button>
+            <button
+              onClick={() => setTransactionType('income')}
+              className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${
+                transactionType === 'income'
+                  ? 'bg-primary text-white shadow-sm'
+                  : 'text-text-muted hover:text-text-main'
+              }`}
+            >
+              收入
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-y-auto no-scrollbar pb-32 px-6">
+        {/* Amount Input */}
+        <div className="mt-4 mb-8 text-center relative z-[101]">
+          <div className="flex items-center justify-center gap-3 mx-auto w-full max-w-[320px]">
+            <span className={`text-3xl font-bold ${transactionType === 'expense' ? 'text-gray-500' : 'text-primary'}`}>$</span>
+            <div 
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowKeypad(true);
+              }}
+              className={`bg-white rounded-pill py-4 px-8 shadow-sm border border-gray-100 flex items-center justify-center min-w-[120px] max-w-[240px] cursor-pointer relative z-[101] break-all whitespace-pre-wrap ${
+                amount.length > 12 ? 'text-2xl' : amount.length > 8 ? 'text-3xl' : amount.length > 5 ? 'text-4xl' : 'text-5xl'
+              } font-bold ${
+                transactionType === 'expense' ? 'text-gray-500' : 'text-primary'
+              }`}
+            >
+              {amount}
+            </div>
+          </div>
+
+          {/* Payer and Debtors - Only for Expense */}
+          {transactionType === 'expense' && (
+            <div className="mt-6 flex items-center justify-center gap-4 text-sm font-medium relative z-[101]">
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-text-muted text-xs">付款人 Payer</span>
+                {payer ? (
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100">
+                    <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center text-xs overflow-hidden">
+                      {payer.participant.avatar ? (
+                        <img alt={payer.participant.name} src={payer.participant.avatar} className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{payer.participant.name[0]}</span>
+                      )}
+                    </div>
+                    <span className="text-text-main">${payer.amount.toFixed(0)}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100">
+                    <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center text-xs">👤</div>
+                    <span className="text-text-muted text-xs">-</span>
+                  </div>
+                )}
+              </div>
+              <span className="material-symbols-outlined text-text-muted/50 mt-4">arrow_back</span>
+              <div className="flex flex-col items-center gap-1">
+                <span className="text-text-muted text-xs">欠款人 Debtors</span>
+                {debtors.length > 0 ? (
+                  <div className="flex flex-col gap-1">
+                    {debtors.map((debtor) => (
+                      <div
+                        key={debtor.participant.id}
+                        className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100"
+                      >
+                        <div className="h-6 w-6 rounded-full bg-primary-light flex items-center justify-center text-white text-[10px] font-bold overflow-hidden">
+                          {debtor.participant.avatar ? (
+                            <img alt={debtor.participant.name} src={debtor.participant.avatar} className="w-full h-full object-cover" />
+                          ) : (
+                            <span>{debtor.participant.name[0]}</span>
+                          )}
+                        </div>
+                        <span className="text-text-main font-semibold">${debtor.amount.toFixed(0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100">
+                    <div className="h-6 w-6 rounded-full bg-primary-light flex items-center justify-center text-white text-[10px] font-bold">-</div>
+                    <span className="text-text-muted text-xs">-</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowKeypad(false);
+          }}
+          className="flex flex-col gap-4"
+        >
+          {/* Category */}
+          <CategoryPicker
+            selectedCategory={selectedCategory}
+            onSelectCategory={(categoryId) => {
+              setSelectedCategory(categoryId)
+              setShowKeypad(false)
+            }}
+            onModalStateChange={setShowCreateCategoryModal}
+            type={transactionType}
+          />
+
+          {/* Income mode (personal vs common fund deposit vs bonus/refund) */}
+          {transactionType === 'income' && selectedCategoryName !== 'To receive from' && (
+            <div className="bg-white p-5 rounded-card shadow-sm">
+              <div className="w-full flex justify-center mb-4">
+                <div className="bg-background-light p-1 rounded-full border border-gray-100 flex relative w-full max-w-[320px] shadow-sm">
+                  <button
+                    onClick={() => setIncomeMode('personal')}
+                    className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${
+                      incomeMode === 'personal' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
+                    }`}
+                  >
+                    個人收入
+                  </button>
+                  {isMultiMemberLedger && (
+                    <button
+                      onClick={() => setIncomeMode('deposit')}
+                      className={`flex-1 py-2 rounded-full text-xs font-bold transition-all ${
+                        incomeMode === 'deposit' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
+                      }`}
+                    >
+                      儲值
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {incomeMode === 'deposit' && isMultiMemberLedger && (
+                <>
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowKeypad(false)
+                      setPayerModalMode('deposit')
+                      setTimeout(() => setShowPayerModal(true), 100)
+                    }}
+                    className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
+                  >
+                    <span className="text-sm font-bold text-[#657486] tracking-wide">
+                      管理者/收款者
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const p = participants.find((x) => x.id === depositManagerId)
+                        if (!p) return null
+                        return (
+                          <div className="size-10 rounded-full border-2 border-white ring-2 ring-primary overflow-hidden">
+                            {p.avatar ? (
+                              <img alt={p.name} src={p.avatar} className="rounded-full size-full object-cover" />
+                            ) : (
+                              <div className="rounded-full size-full bg-primary flex items-center justify-center text-white font-bold text-sm">
+                                {p.name[0]}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
+                      <span className="material-symbols-outlined text-primary">edit</span>
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowKeypad(false)
+                      setParticipantsModalMode('deposit')
+                      setTimeout(() => setShowParticipantsModal(true), 100)
+                    }}
+                    className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
+                  >
+                    <span className="text-sm font-bold text-[#657486] tracking-wide">
+                      出資者
+                    </span>
+                    <div className="flex -space-x-2">
+                      {depositParticipantIds.map((id, index) => {
+                        const participant = participants.find((p) => p.id === id)
+                        if (!participant) return null
+                        return (
+                          <button
+                            key={id}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setShowKeypad(false)
+                              setParticipantsModalMode('deposit')
+                              setTimeout(() => setShowParticipantsModal(true), 100)
+                            }}
+                            className="relative z-30 size-10 rounded-full border-2 border-white ring-2 ring-primary transition-transform hover:scale-105 active:scale-95 overflow-hidden"
+                            style={{ zIndex: 30 - index }}
+                          >
+                            {participant.avatar ? (
+                              <img alt={participant.name} src={participant.avatar} className="rounded-full size-full object-cover" />
+                            ) : (
+                              <div className="rounded-full size-full bg-primary flex items-center justify-center text-white font-bold text-sm">
+                                {participant.name[0]}
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {depositParticipantIds.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                        Amounts (Optional)
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {depositParticipantIds.map((id) => {
+                          const p = participants.find((x) => x.id === id)
+                          if (!p) return null
+                          return (
+                            <div key={`income-split-amt-${id}`} className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="h-9 w-9 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
+                                  {p.avatar ? (
+                                    <img alt={p.name} src={p.avatar} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-xs font-bold text-text-muted">{p.name[0]}</span>
+                                  )}
+                                </div>
+                                <div className="text-sm font-semibold text-text-main truncate">{p.name}</div>
+                              </div>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={depositSplitAmounts[id] ?? ''}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  setDepositSplitAmounts((prev) => ({ ...prev, [id]: v }))
+                                }}
+                                placeholder="Auto"
+                                className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Note/Description */}
+          <div className="bg-white p-5 rounded-card shadow-sm">
+            <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+              {transactionType === 'income' ? 'Source of income?' : 'What was this for?'}
+            </label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={transactionType === 'income' ? 'Source of income?' : 'What was this for?'}
+              className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+            />
+          </div>
+
+          {/* Shared With - Only for Expense */}
+          {transactionType === 'expense' && (
+            <div className="bg-white p-5 rounded-card shadow-sm">
+              <div
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setShowKeypad(false)
+                  setPayerModalMode('expense')
+                  setTimeout(() => setShowPayerModal(true), 100)
+                }}
+                className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
+              >
+                <span className="text-sm font-bold text-[#657486] tracking-wide">
+                  Payer
+                </span>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const p = expensePayerOptions().find((x) => x.id === payerId)
+                    if (!p) return (
+                      <div className="size-10 rounded-full border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center text-gray-400">
+                        👤
+                      </div>
+                    )
+                    return (
+                      <div className="size-10 rounded-full border-2 border-white ring-2 ring-primary overflow-hidden">
+                        {(p as any).avatar ? (
+                          <img alt={p.name} src={p.avatar} className="rounded-full size-full object-cover" />
+                        ) : (
+                          <div className="rounded-full size-full bg-primary flex items-center justify-center text-white font-bold text-sm">
+                            {p.name[0]}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+                  <span className="material-symbols-outlined text-primary">edit</span>
+                </div>
+              </div>
+
+              <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
+                Split with
+              </label>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex -space-x-3 overflow-hidden p-1">
+                  {selectedParticipantIds.map((id, index) => {
+                    const participant = participants.find((p) => p.id === id)
+                    if (!participant) return null
+                    return (
+                      <div
+                        key={id}
+                        className="h-10 w-10 rounded-full ring-2 ring-white bg-primary-light flex items-center justify-center text-white text-xs font-bold overflow-hidden"
+                        style={{ zIndex: selectedParticipantIds.length - index }}
+                      >
+                        {participant.avatar ? (
+                          <img alt={participant.name} src={participant.avatar} className="w-full h-full object-cover" />
+                        ) : (
+                          (participant.name === 'You' ? 'You' : participant.name[0])
+                        )}
+                      </div>
+                    )
+                  })}
+                  {selectedParticipantIds.length === 0 && (
+                    <div className="h-10 w-10 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-xs">
+                      👤
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowKeypad(false)
+                    setParticipantsModalMode('expense')
+                    setTimeout(() => setShowParticipantsModal(true), 100)
+                  }}
+                  className="text-primary text-sm font-semibold hover:text-primary/80 transition-colors"
+                >
+                  Edit
+                </button>
+              </div>
+
+              {selectedParticipantIds.length > 0 && (
+                <div className="mt-3 mb-4">
+                  <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                    Split Amounts (Optional)
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {selectedParticipantIds.map((id) => {
+                      const p = participants.find((x) => x.id === id)
+                      if (!p) return null
+                      return (
+                        <div key={`split-amt-${id}`} className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="h-9 w-9 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center shrink-0">
+                              {p.avatar ? (
+                                <img alt={p.name} src={p.avatar} className="w-full h-full object-cover" />
+                              ) : (
+                                <span className="text-xs font-bold text-text-muted">{p.name[0]}</span>
+                              )}
+                            </div>
+                            <div className="text-sm font-semibold text-text-main truncate">{p.name}</div>
+                          </div>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={customSplitAmounts[id] ?? ''}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setCustomSplitAmounts((prev) => ({ ...prev, [id]: v }))
+                            }}
+                            placeholder="Auto"
+                            className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Shared expense (public expense) - same UI as /add */}
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <span className="material-symbols-outlined">groups</span>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-text-main">Shared expense</h4>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isPublicExpense}
+                    onChange={(e) => setIsPublicExpense(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+
+              {isPublicExpense && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                    Shared expense Amount ($)
+                  </label>
+                  <input
+                    type="number"
+                    value={publicAmount}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      const total = Math.ceil(parseFloat(amount) || 0)
+                      if (next === '') {
+                        setPublicAmount('0')
+                      } else {
+                        const n = parseFloat(next)
+                        if (isNaN(n)) {
+                          setPublicAmount(next)
+                        } else if (total > 0) {
+                          setPublicAmount(Math.min(Math.ceil(n), total).toString())
+                        } else {
+                          setPublicAmount(next)
+                        }
+                      }
+                      setPublicAmountManuallySet(true)
+                    }}
+                    placeholder="Auto-calculated"
+                    className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                  />
+                  <p className="text-xs text-text-muted mt-2">
+                    Default: ${(() => {
+                      const total = parseFloat(amount) || 0
+                      const memberCount = Math.max(1, participants.length || 1)
+                      return Math.ceil(total / memberCount).toFixed(0)
+                    })()} (Total ÷ {Math.max(1, participants.length || 1)})
+                  </p>
+
+                  <div className="mt-4">
+                    <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                      Shared with (Shared expense)
+                    </label>
+                    <div className="flex items-center justify-between">
+                      <div className="flex -space-x-3 overflow-hidden p-1">
+                        {publicShareParticipantIds.map((id, index) => {
+                          const participant = participants.find((p) => p.id === id)
+                          if (!participant) return null
+                          return (
+                            <div
+                              key={id}
+                              className={`h-10 w-10 rounded-full ring-2 ring-white overflow-hidden ${
+                                id === payerId ? 'bg-primary-light' : 'bg-gray-200'
+                              }`}
+                              style={{ zIndex: publicShareParticipantIds.length - index }}
+                            >
+                              {participant.avatar ? (
+                                <img
+                                  alt={participant.name}
+                                  src={participant.avatar}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div
+                                  className={`w-full h-full flex items-center justify-center text-xs font-bold ${
+                                    id === payerId ? 'text-white' : 'text-gray-700'
+                                  }`}
+                                >
+                                  {participant.name[0]}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowKeypad(false)
+                          setTimeout(() => setShowPublicShareModal(true), 100)
+                        }}
+                        className="text-primary text-sm font-semibold hover:text-primary/80 transition-colors"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Repayment Object - Only for Income when "To receive from" category is selected */}
+          {transactionType === 'income' && selectedCategoryName === 'To receive from' && (
+            <div className="bg-white p-5 rounded-card shadow-sm">
+              <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
+              To receive from
+              </label>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex -space-x-3 overflow-hidden p-1">
+                  {repaymentParticipantIds.map((id, index) => {
+                    const participant = participants.find((p) => p.id === id)
+                    if (!participant) return null
+                    return (
+                      <div
+                        key={id}
+                        className="h-10 w-10 rounded-full ring-2 ring-white bg-secondary flex items-center justify-center text-white text-xs font-bold"
+                        style={{ zIndex: repaymentParticipantIds.length - index }}
+                      >
+                        {participant.name === 'You' ? 'You' : participant.name[0]}
+                      </div>
+                    )
+                  })}
+                  {repaymentParticipantIds.length === 0 && (
+                    <div className="h-10 w-10 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-xs">
+                      👤
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowKeypad(false)
+                    setTimeout(() => setShowRepaymentModal(true), 100)
+                  }}
+                  className="text-primary text-sm font-semibold hover:text-primary/80 transition-colors"
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Date */}
+          <div className="bg-white p-5 rounded-card shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-text-muted">
+                  <span className="material-symbols-outlined">calendar_today</span>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-text-main">Date</h4>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDatePicker(true)}
+                className="bg-transparent border-none text-right text-text-muted font-medium focus:ring-0 p-0 text-sm"
+              >
+                {formatSimpleDate(selectedDate)}
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+              >
+                <span className="material-symbols-outlined">delete</span>
+                刪除
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !canSave()}
+                className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors ${
+                  saving || !canSave()
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
+                }`}
+              >
+                {saving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                    <span>儲存中...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined">check</span>
+                    儲存
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => {
+            setShowDeleteModal(false);
+          }}></div>
+          <div className="relative w-full max-w-[340px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col items-center text-center transform transition-all animate-in fade-in zoom-in duration-200">
+            <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
+              <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">Confirm Deletion</h3>
+            <p className="text-slate-500 text-sm mb-8 leading-relaxed px-2">
+              Are you sure you want to delete this transaction? This action cannot be undone.
+            </p>
+            <div className="grid grid-cols-2 gap-4 w-full">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                }}
+                className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className={`py-3.5 px-4 rounded-2xl font-bold text-sm shadow-lg transition-colors ${
+                  deleting
+                    ? 'bg-gray-400 text-white cursor-not-allowed'
+                    : 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30'
+                }`}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showParticipantsModal && (
+        <SelectParticipants
+          isOpen={showParticipantsModal}
+          onClose={() => setShowParticipantsModal(false)}
+          onConfirm={(ids) => {
+            if (participantsModalMode === 'deposit') {
+              setDepositParticipantIds(ids)
+              setDepositSplitAmounts((prev) => {
+                const next: Record<string, string> = {}
+                ids.forEach((id) => {
+                  if (prev[id] !== undefined) next[id] = prev[id]
+                })
+                return next
+              })
+            } else {
+              setSelectedParticipantIds(ids)
+              setCustomSplitAmounts((prev) => {
+                const next: Record<string, string> = {}
+                ids.forEach((id) => {
+                  if (prev[id] !== undefined) next[id] = prev[id]
+                })
+                return next
+              })
+            }
+            setShowParticipantsModal(false)
+          }}
+          participants={participants}
+          selectedIds={participantsModalMode === 'deposit' ? depositParticipantIds : selectedParticipantIds}
+          payerId={(participantsModalMode === 'deposit' ? depositManagerId : (payerId || user?.id)) || null}
+          allowEmpty={true}
+        />
+      )}
+
+      {showPayerModal && (
+        <SelectParticipants
+          isOpen={showPayerModal}
+          onClose={() => setShowPayerModal(false)}
+          onConfirm={(ids) => {
+            const nextId = ids[0] || ''
+            if (payerModalMode === 'deposit') {
+              setDepositManagerId(nextId)
+            } else {
+              setPayerId(nextId)
+            }
+            setShowPayerModal(false)
+          }}
+          participants={payerModalMode === 'expense' ? expensePayerOptions() : participants}
+          selectedIds={(payerModalMode === 'deposit' ? depositManagerId : payerId) ? [(payerModalMode === 'deposit' ? depositManagerId : payerId)] : []}
+          payerId={(payerModalMode === 'deposit' ? depositManagerId : payerId) || null}
+          allowEmpty={false}
+          single={true}
+        />
+      )}
+
+      {showRepaymentModal && (
+        <SelectParticipants
+          isOpen={showRepaymentModal}
+          onClose={() => setShowRepaymentModal(false)}
+          onConfirm={(ids) => {
+            setRepaymentParticipantIds(ids)
+            setShowRepaymentModal(false)
+          }}
+          participants={participants.filter((p) => p.id !== user?.id)}
+          selectedIds={repaymentParticipantIds}
+          payerId={null}
+          allowEmpty={false}
+        />
+      )}
+
+      {showPublicShareModal && (
+        <SelectParticipants
+          isOpen={showPublicShareModal}
+          onClose={() => setShowPublicShareModal(false)}
+          onConfirm={(ids) => {
+            setPublicShareParticipantIds(ids)
+            setShowPublicShareModal(false)
+          }}
+          participants={participants}
+          selectedIds={publicShareParticipantIds}
+          payerId={payerId}
+          allowEmpty={true}
+        />
+      )}
+
+      {showDatePicker && (
+        <DatePickerModal
+          isOpen={showDatePicker}
+          onClose={() => setShowDatePicker(false)}
+          onConfirm={(date) => {
+            setSelectedDate(date)
+            setShowDatePicker(false)
+          }}
+          initialDate={selectedDate}
+        />
+      )}
+
+      {showKeypad && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-none">
+          <div 
+            className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity pointer-events-auto"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowKeypad(false);
+            }}
+          ></div>
+          <div className="relative w-full max-w-md pointer-events-auto z-[101]">
+            <NumericKeypad
+              onInput={handleKeypadInput}
+              onClear={handleClear}
+              onBackspace={handleBackspace}
+              onCalculate={handleCalculate}
+              onSave={handleConfirmAmount}
+              canSave={isValidAmount()}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+    </>
+  )
+}
