@@ -146,7 +146,7 @@ export default function FinancePage() {
     let exchange = suggestion?.exchange
     
     if (!suggestion) {
-      exchange = exchangeMap[activeTab] || 'INDEX'
+      exchange = activeTab ? exchangeMap[activeTab] || 'INDEX' : 'INDEX'
     }
     
     if (!exchange || (exchange !== 'TWSE' && exchange !== 'FOREX' && exchange !== 'CRYPTO' && exchange !== 'INDEX')) {
@@ -195,7 +195,7 @@ export default function FinancePage() {
     let exchange = suggestion?.exchange
     
     if (!suggestion) {
-      exchange = exchangeMap[activeTab] || 'INDEX'
+      exchange = activeTab ? exchangeMap[activeTab] || 'INDEX' : 'INDEX'
     }
     
     if (!exchange || (exchange !== 'TWSE' && exchange !== 'FOREX' && exchange !== 'CRYPTO' && exchange !== 'INDEX')) {
@@ -437,7 +437,7 @@ export default function FinancePage() {
                   {stockPrice ? (
                     `$${stockPrice.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   ) : priceLoading ? (
-                    <Loading message="載入中..." size="sm" />
+                    <Loading message="Loading..." size="sm" />
                   ) : (
                     '$4,120.50'
                   )}
@@ -455,14 +455,14 @@ export default function FinancePage() {
           <div ref={chartContainerRef} className="h-64 w-full mb-6 relative">
             {(() => {
               const suggestion = stockSuggestions.find(s => s.symbol === selectedSymbol)
-              const exchange = suggestion?.exchange || exchangeMap[activeTab] || 'INDEX'
+              const exchange = suggestion?.exchange || (activeTab ? exchangeMap[activeTab] : null) || 'INDEX'
               const useCustomChart = exchange === 'TWSE' || exchange === 'FOREX' || exchange === 'CRYPTO' || exchange === 'INDEX'
               
               if (useCustomChart) {
                 if (chartLoading) {
                   return (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Loading message="載入圖表中..." size="sm" />
+                      <Loading message="Loading chart..." size="sm" />
                     </div>
                   )
                 } else if (chartData.length > 0) {
@@ -561,7 +561,7 @@ export default function FinancePage() {
         </div>
         <div className="flex flex-col gap-5">
           {loading ? (
-            <Loading message="載入新聞中..." size="sm" />
+            <Loading message="Loading news..." size="sm" />
           ) : news.length > 0 ? (
             news.map((item, index) => (
               <div key={index}>

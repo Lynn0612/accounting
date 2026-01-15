@@ -80,7 +80,7 @@ const HomePageClient = memo(function HomePageClient({
       const formattedDate = new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       let payerText = '';
       if (tx.expense_payment_source === 'deposit' || tx.income_mode === 'deposit') {
-        payerText = '儲值金';
+        payerText = 'Deposit';
       } else if (tx.payer_id === user?.id) {
         payerText = "You paid";
       } else if (tx.payer) {
@@ -272,7 +272,7 @@ const HomePageClient = memo(function HomePageClient({
           <div className="flex items-center justify-between mb-4 px-1">
             <h3 className="text-lg font-bold text-text-main">Recent Transactions</h3>
             <Link href="/transactions" className="text-sm text-primary font-semibold hover:text-blue-600 transition-colors">
-              See All
+              View All
             </Link>
           </div>
           <div className="flex flex-col gap-3">

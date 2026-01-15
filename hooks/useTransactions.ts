@@ -132,7 +132,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
         ...s.transactions,
         amount: s.amount,
         payer: s.transactions.payer || null,
-      }))
+        }))
     }
 
     return formattedData.map((tx: any) => ({ ...tx, payer: null }))
@@ -184,10 +184,10 @@ const getTransactions = async (params: TransactionQueryParams) => {
 
   // If includePayer is true, payer info is already included via JOIN
   if (includePayer && data && data.length > 0) {
-    return data.map((tx: any) => ({
-      ...tx,
+      return data.map((tx: any) => ({
+        ...tx,
       payer: tx.payer || null,
-    }))
+      }))
   }
 
   return (data || []).map((tx: any) => ({

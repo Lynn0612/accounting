@@ -84,7 +84,7 @@ export default function EditTransactionPage() {
   const isMultiMemberLedger = participants.length > 1
   const expensePayerOptions = useCallback(() => {
     if (!isMultiMemberLedger) return participants
-    const depositOption = { id: DEPOSIT_PAYER_ID, name: '儲值金' } as any
+    const depositOption = { id: DEPOSIT_PAYER_ID, name: 'Deposit' } as any
     return [depositOption, ...participants]
   }, [participants, DEPOSIT_PAYER_ID, isMultiMemberLedger])
 
@@ -111,7 +111,7 @@ export default function EditTransactionPage() {
             .single()
 
           if (sError || !s) {
-            handleError(sError, '載入還款資料失敗')
+            handleError(sError, 'load repayment data failed')
             router.back()
             return
           }
@@ -223,7 +223,7 @@ export default function EditTransactionPage() {
                 .eq('transaction_id', transactionId)
 
               if (splitsError) {
-                handleError(splitsError, '載入分攤記錄失敗')
+                handleError(splitsError, 'load split record failed')
               }
 
               // Fallback for legacy rows (columns not present / not returned)
@@ -280,7 +280,7 @@ export default function EditTransactionPage() {
               }
             }
       } catch (error) {
-        handleError(error, '載入交易資料失敗')
+        handleError(error, 'load transaction data failed')
         router.back()
       } finally {
         setLoading(false)
@@ -387,6 +387,13 @@ export default function EditTransactionPage() {
     const d = String(date.getDate()).padStart(2, '0')
     return `${y}-${m}-${d}`
   }, [])
+
+  // Auto-disable shared expense if ledger becomes single-member
+  useEffect(() => {
+    if (!isMultiMemberLedger && isPublicExpense) {
+      setIsPublicExpense(false)
+    }
+  }, [isMultiMemberLedger, isPublicExpense])
 
   // Auto-calculate shared expense amount when total changes (same behavior as /add)
   useEffect(() => {
@@ -551,7 +558,7 @@ export default function EditTransactionPage() {
           .eq('id', settlementId)
 
         if (updateError) {
-          handleError(updateError, '更新還款失敗')
+          handleError(updateError, 'update repayment failed')
           setSaving(false)
           return
         }
@@ -564,13 +571,13 @@ export default function EditTransactionPage() {
       }
 
       if (!selectedCategory) {
-        handleError(null, '請選擇類別')
+        handleError(null, 'please select category')
         setSaving(false)
         return
       }
 
       if (!activeLedger || !activeLedger.id) {
-        handleError(null, '未找到活動帳本')
+        handleError(null, 'active book not found')
         setSaving(false)
         return
       }
@@ -601,7 +608,7 @@ export default function EditTransactionPage() {
         if (isRepaymentCategory) {
           // Repayment category: Write to settlements table only (not transactions)
           if (repaymentParticipantIds.length === 0) {
-            handleError(null, "請選擇還款對象");
+            handleError(null, "please select repayment participants");
             setSaving(false);
             return;
           }
@@ -626,7 +633,7 @@ export default function EditTransactionPage() {
           }
 
           if (deleteError) {
-            handleError(deleteError, '刪除舊還款記錄失敗')
+            handleError(deleteError, 'delete old settlements failed')
             setSaving(false)
             return
           }
@@ -647,7 +654,7 @@ export default function EditTransactionPage() {
             .insert(settlementRecords);
 
           if (settlementError) {
-            handleError(settlementError, '保存還款記錄失敗');
+            handleError(settlementError, 'save repayment record failed');
             setSaving(false);
             return;
           }
@@ -659,7 +666,7 @@ export default function EditTransactionPage() {
             .eq('id', transactionId)
 
           if (deleteTxError) {
-            handleError(deleteTxError, '刪除交易失敗')
+            handleError(deleteTxError, 'delete transaction failed')
             setSaving(false)
             return
           }
@@ -687,17 +694,17 @@ export default function EditTransactionPage() {
           const categoryId: string | null = selectedCategory; // Use selectedCategory directly
           if (incomeMode === 'deposit') {
             if (!isMultiMemberLedger) {
-              handleError(null, '此帳本無其他成員，無法使用儲值金')
+              handleError(null, 'this book has no other members, cannot use deposit')
               setSaving(false)
               return
             }
             if (!depositManagerId) {
-              handleError(null, '請選擇管理者/收款者')
+              handleError(null, 'please select manager/receiver')
               setSaving(false)
               return
             }
             if (depositParticipantIds.length === 0) {
-              handleError(null, '請選擇出資者')
+              handleError(null, 'please select contributors')
               setSaving(false)
               return
             }
@@ -705,7 +712,7 @@ export default function EditTransactionPage() {
             const totalInt = Math.ceil(finalAmount)
             const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts)
             if (!computed.ok) {
-              handleError(null, '分攤金額不可超過總金額')
+              handleError(null, 'split amount cannot exceed total amount')
               setSaving(false)
               return
             }
@@ -737,7 +744,7 @@ export default function EditTransactionPage() {
               .eq('id', transactionId)
 
             if (updateError) {
-              handleError(updateError, '更新交易失敗')
+              handleError(updateError, 'update transaction failed')
               setSaving(false)
               return
             }
@@ -749,7 +756,7 @@ export default function EditTransactionPage() {
               .eq('transaction_id', transactionId)
 
             if (deleteError) {
-              handleError(deleteError, '刪除舊分攤失敗')
+              handleError(deleteError, 'delete old splits failed')
               setSaving(false)
               return
             }
@@ -767,7 +774,7 @@ export default function EditTransactionPage() {
               if (splitError) {
                 // 如果 splits 創建失敗，嘗試恢復舊 splits（但由於已刪除，無法完全恢復）
                 // 至少提示用戶需要重新編輯
-                handleError(splitError, '保存分攤失敗，請重新編輯此交易')
+                handleError(splitError, 'save split failed, please edit this transaction again')
                 setSaving(false)
                 return
               }
@@ -792,7 +799,7 @@ export default function EditTransactionPage() {
               .eq('id', transactionId)
 
             if (updateError) {
-              handleError(updateError, '更新交易失敗')
+              handleError(updateError, 'update transaction failed')
               setSaving(false)
               return
             }
@@ -804,7 +811,7 @@ export default function EditTransactionPage() {
               .eq('transaction_id', transactionId)
 
             if (deleteError) {
-              handleError(deleteError, '刪除舊分攤失敗')
+              handleError(deleteError, 'delete old splits failed')
               setSaving(false)
               return
             }
@@ -822,7 +829,7 @@ export default function EditTransactionPage() {
 
             if (splitError) {
               // 如果 split 創建失敗，提示用戶需要重新編輯
-              handleError(splitError, '保存分攤失敗，請重新編輯此交易')
+              handleError(splitError, 'save split failed, please edit this transaction again')
               setSaving(false)
               return
             }
@@ -830,7 +837,7 @@ export default function EditTransactionPage() {
         }
       } else {
         if (payerId === DEPOSIT_PAYER_ID && !isMultiMemberLedger) {
-          handleError(null, '此帳本無其他成員，無法使用儲值金')
+          handleError(null, 'this book has no other members, cannot use deposit')
           setSaving(false)
           return
         }
@@ -852,7 +859,7 @@ export default function EditTransactionPage() {
           ])
 
           if (incomeResult.error || expenseResult.error) {
-            handleError(incomeResult.error || expenseResult.error, '無法取得儲值金餘額')
+            handleError(incomeResult.error || expenseResult.error, 'cannot get deposit balance')
             setSaving(false)
             return
           }
@@ -866,7 +873,7 @@ export default function EditTransactionPage() {
           const availableDepositBalance = currentDepositBalance + (originalWasDepositExpense ? Number(originalTransaction?.amount || 0) : 0)
 
           if (totalInt > availableDepositBalance) {
-            handleError(null, '儲值金不足，無法保存')
+            handleError(null, 'deposit balance is not enough, cannot save')
             setSaving(false)
             return
           }
@@ -877,12 +884,12 @@ export default function EditTransactionPage() {
         if (isPublicExpense) {
           const p = parseFloat(publicAmount)
           if (!publicAmount || isNaN(p) || p <= 0) {
-            handleError(null, '請輸入公費金額')
+            handleError(null, 'please enter public amount')
             setSaving(false)
             return
           }
           if (totalInt > 0 && !isNaN(p) && Math.ceil(p) > totalInt) {
-            handleError(null, '公費不可超過總金額')
+            handleError(null, 'public amount cannot exceed total amount')
             setSaving(false)
             return
           }
@@ -918,7 +925,7 @@ export default function EditTransactionPage() {
           .eq('id', transactionId)
 
         if (updateError) {
-          handleError(updateError, '更新交易失敗')
+          handleError(updateError, 'update transaction failed')
           setSaving(false)
           return
         }
@@ -930,7 +937,7 @@ export default function EditTransactionPage() {
           .eq('transaction_id', transactionId)
 
         if (deleteError) {
-          handleError(deleteError, '刪除舊分攤失敗')
+          handleError(deleteError, 'delete old splits failed')
           setSaving(false)
           return
         }
@@ -967,7 +974,7 @@ export default function EditTransactionPage() {
             const publicShareCount = publicShareParticipants.length
 
             if (publicShareCount === 0) {
-              handleError(null, '請選擇公費分攤對象')
+              handleError(null, 'please select public share participants')
               setSaving(false)
               return
             }
@@ -979,7 +986,7 @@ export default function EditTransactionPage() {
             const personalShareParticipants = effectiveSplitWithIds.length > 0 ? effectiveSplitWithIds : [finalPayerId]
             const personalShares = computeCustomSplits(remainingAmount, personalShareParticipants)
             if (!personalShares.ok) {
-              handleError(null, '分攤金額不可超過總金額')
+              handleError(null, 'split amount cannot exceed total amount')
               setSaving(false)
               return
             }
@@ -1027,7 +1034,7 @@ export default function EditTransactionPage() {
             if (splitError) {
               // 如果 splits 創建失敗，嘗試恢復舊 splits（但由於已刪除，無法完全恢復）
               // 至少提示用戶需要重新編輯
-              handleError(splitError, '保存分攤失敗，請重新編輯此交易')
+              handleError(splitError, 'save split failed, please edit this transaction again')
               setSaving(false)
               return
             }
@@ -1043,7 +1050,7 @@ export default function EditTransactionPage() {
       await queryClient.invalidateQueries({ queryKey: ['outstandingTotal'], exact: false })
       router.back()
     } catch (error) {
-      handleError(error, '保存交易失敗')
+      handleError(error, 'save transaction failed')
     } finally {
       setSaving(false)
     }
@@ -1063,7 +1070,7 @@ export default function EditTransactionPage() {
           .eq('id', settlementId)
 
         if (deleteError) {
-          handleError(deleteError, '刪除還款失敗')
+          handleError(deleteError, 'delete settlement failed')
           setDeleting(false)
           return
         }
@@ -1104,7 +1111,7 @@ export default function EditTransactionPage() {
         .eq('id', transactionId)
 
       if (deleteError) {
-        handleError(deleteError, '刪除交易失敗')
+        handleError(deleteError, 'delete transaction failed')
         setDeleting(false)
         return
       }
@@ -1117,7 +1124,7 @@ export default function EditTransactionPage() {
       await queryClient.invalidateQueries({ queryKey: ['settlements'], exact: false })
       router.back()
     } catch (error) {
-      handleError(error, '刪除交易失敗')
+      handleError(error, 'delete transaction failed')
     } finally {
       setDeleting(false)
       setShowDeleteModal(false)
@@ -1322,14 +1329,14 @@ export default function EditTransactionPage() {
           onClose={clearError}
           details={error?.details}
         />
-        <Loading fullScreen message="載入中..." />
+        <Loading fullScreen message="Loading..." />
       </>
     )
   }
 
   if (isSettlement) {
     const isReceiver = transactionType === 'income';
-    const title = '收到還款'
+    const title = 'Received Payment'
 
     return (
       <>
@@ -1373,7 +1380,7 @@ export default function EditTransactionPage() {
               {/* Counterparty Selection */}
               <div className="bg-white p-5 rounded-card shadow-sm">
                 <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
-                  {isReceiver ? '還款人 (From)' : '收款人 (To)'}
+                  {isReceiver ? 'Payer (From)' : 'Receiver (To)'}
                 </label>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex -space-x-3 overflow-hidden p-1">
@@ -1383,13 +1390,15 @@ export default function EditTransactionPage() {
                       return (
                         <div
                           key={id}
-                          className="h-10 w-10 rounded-full ring-2 ring-white bg-secondary flex items-center justify-center text-white text-xs font-bold overflow-hidden"
+                          className="h-10 w-10 rounded-full ring-2 ring-white overflow-hidden"
                           style={{ zIndex: repaymentParticipantIds.length - index }}
                         >
                           {participant.avatar ? (
                             <img alt={participant.name} src={participant.avatar} className="w-full h-full object-cover" />
                           ) : (
-                            (participant.name === 'You' ? 'You' : participant.name[0])
+                            <div className="rounded-full size-full bg-primary flex items-center justify-center text-white font-bold text-sm">
+                              {participant.name === 'You' ? 'You' : participant.name[0]}
+                            </div>
                           )}
                         </div>
                       )
@@ -1408,7 +1417,7 @@ export default function EditTransactionPage() {
                     }}
                     className="text-primary text-sm font-semibold hover:text-primary/80 transition-colors"
                   >
-                    編輯對象
+                    Edit Participants
                   </button>
                 </div>
               </div>
@@ -1416,13 +1425,13 @@ export default function EditTransactionPage() {
               {/* Note/Description */}
               <div className="bg-white p-5 rounded-card shadow-sm">
                 <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-                  還款備註
+                  Payment Note
                 </label>
                 <input
                   type="text"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder="還款來源或備註"
+                  placeholder="Payment Source or Note"
                   className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
                 />
               </div>
@@ -1435,7 +1444,7 @@ export default function EditTransactionPage() {
                       <span className="material-symbols-outlined">calendar_today</span>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-text-main">日期</h4>
+                      <h4 className="font-semibold text-text-main">Date</h4>
                     </div>
                   </div>
                   <button
@@ -1461,7 +1470,7 @@ export default function EditTransactionPage() {
                 className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
               >
                 <span className="material-symbols-outlined">delete</span>
-                刪除
+                delete
               </button>
               <button
                 onClick={handleSave}
@@ -1470,12 +1479,12 @@ export default function EditTransactionPage() {
                   saving || !canSave() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
                 }`}
               >
-                {saving ? '儲存中...' : '儲存'}
+                {saving ? 'saving...' : 'save'}
               </button>
             </div>
             ) : (
               <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium">
-                Viewer 模式：僅供檢視，無法修改
+                Viewer mode: only for viewing, cannot be modified
               </div>
             )}
           </div>
@@ -1487,16 +1496,16 @@ export default function EditTransactionPage() {
                 <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
                   <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
                 </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-3">確認刪除</h3>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">confirm deletion</h3>
                 <p className="text-slate-500 text-sm mb-8 leading-relaxed px-2">
-                  確定要刪除這筆交易嗎？此動作將無法復原。
+                Are you sure you want to delete this transaction? This action cannot be undone.
                 </p>
                 <div className="grid grid-cols-2 gap-4 w-full">
                   <button
                     onClick={() => setShowDeleteModal(false)}
                     className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-colors"
                   >
-                    取消
+                    cancel
                   </button>
                   <button
                     onClick={handleDelete}
@@ -1505,7 +1514,7 @@ export default function EditTransactionPage() {
                       deleting ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30'
                     }`}
                   >
-                    {deleting ? '刪除中...' : '刪除'}
+                    {deleting ? 'deleting...' : 'delete'}
                   </button>
                 </div>
               </div>
@@ -1583,7 +1592,7 @@ export default function EditTransactionPage() {
           >
             <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-lg font-bold text-text-main">編輯交易</h1>
+              <h1 className="text-lg font-bold text-text-main">Edit Transaction</h1>
           <div className="w-10"></div>
         </div>
         <div className="w-full flex justify-center">
@@ -1596,7 +1605,7 @@ export default function EditTransactionPage() {
                   : 'text-text-muted hover:text-text-main'
               }`}
             >
-              支出
+              Expense
             </button>
             <button
               onClick={() => setTransactionType('income')}
@@ -1606,7 +1615,7 @@ export default function EditTransactionPage() {
                   : 'text-text-muted hover:text-text-main'
               }`}
             >
-              收入
+              Income
             </button>
           </div>
         </div>
@@ -1637,7 +1646,7 @@ export default function EditTransactionPage() {
           {transactionType === 'expense' && payerId !== DEPOSIT_PAYER_ID && (
             <div className="mt-6 flex items-center justify-center gap-4 text-sm font-medium relative z-[101]">
               <div className="flex flex-col items-center gap-1">
-                <span className="text-text-muted text-xs">付款人 Payer</span>
+                <span className="text-text-muted text-xs">Payer</span>
                 {payer ? (
                   <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100">
                     <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center text-xs overflow-hidden">
@@ -1658,7 +1667,7 @@ export default function EditTransactionPage() {
               </div>
               <span className="material-symbols-outlined text-text-muted/50 mt-4">arrow_back</span>
               <div className="flex flex-col items-center gap-1">
-                <span className="text-text-muted text-xs">欠款人 Debtors</span>
+                <span className="text-text-muted text-xs">Debtors</span>
                 {debtors.length > 0 ? (
                   <div className="flex flex-col gap-1">
                     {debtors.map((debtor) => (
@@ -1692,7 +1701,7 @@ export default function EditTransactionPage() {
             <div className="px-6 w-full mt-4 mb-6" onClick={(e) => e.stopPropagation()}>
               <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
                 <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-                  詳細分攤 Details
+                  Detailed Split Details
                 </div>
                 <div className="flex flex-col gap-2">
                   {(debtors as Array<{ participant: Participant; amount: number; publicShare?: number; personalShare?: number }>)
@@ -1711,7 +1720,7 @@ export default function EditTransactionPage() {
                             {debtor.participant.name}
                           </span>
                           <span className="text-[11px] text-text-muted whitespace-nowrap">
-                            公費 {publicShare.toFixed(0)} + 個人 {personalShare.toFixed(0)}
+                            Public Share {publicShare.toFixed(0)} + Personal {personalShare.toFixed(0)}
                           </span>
                         </div>
                       );
@@ -1751,7 +1760,7 @@ export default function EditTransactionPage() {
                       incomeMode === 'personal' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
                     }`}
                   >
-                    個人收入
+                    Personal Income
                   </button>
                   {isMultiMemberLedger && (
                     <button
@@ -1760,7 +1769,7 @@ export default function EditTransactionPage() {
                         incomeMode === 'deposit' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
                       }`}
                     >
-                      儲值
+                        Deposit
                     </button>
                   )}
                 </div>
@@ -1778,7 +1787,7 @@ export default function EditTransactionPage() {
                     className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
                   >
                     <span className="text-sm font-bold text-[#657486] tracking-wide">
-                      管理者/收款者
+                      Manager/Receiver
                     </span>
                     <div className="flex items-center gap-2">
                       {(() => {
@@ -1810,7 +1819,7 @@ export default function EditTransactionPage() {
                     className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
                   >
                     <span className="text-sm font-bold text-[#657486] tracking-wide">
-                      出資者
+                      Contributors
                     </span>
                     <div className="flex -space-x-2">
                       {depositParticipantIds.map((id, index) => {
@@ -2020,27 +2029,29 @@ export default function EditTransactionPage() {
               )}
 
               {/* Shared expense (public expense) - same UI as /add */}
-              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                    <span className="material-symbols-outlined">groups</span>
+              {isMultiMemberLedger && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <span className="material-symbols-outlined">groups</span>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-text-main">Shared expense</h4>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-semibold text-text-main">Shared expense</h4>
-                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPublicExpense}
+                      onChange={(e) => setIsPublicExpense(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isPublicExpense}
-                    onChange={(e) => setIsPublicExpense(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                </label>
-              </div>
+              )}
 
-              {isPublicExpense && (
+              {isPublicExpense && isMultiMemberLedger && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
                   <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
                     Shared expense Amount ($)
@@ -2221,7 +2232,7 @@ export default function EditTransactionPage() {
             className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
           >
             <span className="material-symbols-outlined">delete</span>
-                刪除
+            delete
           </button>
           <button
             onClick={handleSave}
@@ -2235,12 +2246,12 @@ export default function EditTransactionPage() {
             {saving ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>儲存中...</span>
+                    <span>saving...</span>
               </>
             ) : (
               <>
                 <span className="material-symbols-outlined">check</span>
-                    儲存
+                    save
               </>
             )}
           </button>

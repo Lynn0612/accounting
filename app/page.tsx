@@ -192,7 +192,7 @@ export default async function HomePage() {
       recentTransactions={recentTransactions}
       percentage={percentage}
       activeBookName={activeBookName}
-      initialLedgers={ledgers}
+      initialLedgers={ledgers || []}
     />
   );
 }

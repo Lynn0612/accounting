@@ -91,7 +91,7 @@ export default function AddTransactionPage() {
   const isMultiMemberLedger = participants.length > 1
   const expensePayerOptions = useMemo(() => {
     if (!isMultiMemberLedger) return participants
-    const depositOption = { id: DEPOSIT_PAYER_ID, name: '儲值金' } as any
+    const depositOption = { id: DEPOSIT_PAYER_ID, name: 'Deposit' } as any
     return [depositOption, ...participants]
   }, [participants, isMultiMemberLedger])
   const isLoadingUserOrRole = isLoadingUserFromHook || isLoadingRole;
@@ -346,6 +346,13 @@ export default function AddTransactionPage() {
       setShowKeypad(false);
     }
   }, [amount, handleCalculate]);
+
+  // Auto-disable shared expense if ledger becomes single-member
+  useEffect(() => {
+    if (!isMultiMemberLedger && isPublicExpense) {
+      setIsPublicExpense(false)
+    }
+  }, [isMultiMemberLedger, isPublicExpense])
 
   // Update public amount when amount changes
   // - Default behavior (no custom split amounts): Total ÷ member count
@@ -666,7 +673,7 @@ export default function AddTransactionPage() {
     }
 
     if (!isMember) {
-      handleError(null, "您已不再是此帳本的成員，無法記帳");
+      handleError(null, "you are no longer a member of this book, cannot record");
       // Refresh ledgers and redirect
       await refreshLedgers();
       setTimeout(() => {
@@ -713,7 +720,7 @@ export default function AddTransactionPage() {
       if (isRepaymentCategory) {
         // Repayment category: Write to settlements table only (not transactions)
         if (repaymentParticipantIds.length === 0) {
-          handleError(null, "請選擇還款對象");
+          handleError(null, "please select repayment participants");
           setSaving(false);
           return;
         }
@@ -740,7 +747,7 @@ export default function AddTransactionPage() {
           .insert(settlementRecords);
 
         if (settlementError) {
-          handleError(settlementError, '保存還款記錄失敗');
+          handleError(settlementError, 'save settlement failed');
           setSaving(false);
           return;
         }
@@ -760,24 +767,24 @@ export default function AddTransactionPage() {
 
         if (incomeMode === 'deposit') {
           if (!isMultiMemberLedger) {
-            handleError(null, '此帳本無其他成員，無法使用儲值金')
+            handleError(null, 'this book has no other members, cannot use deposit')
             setSaving(false)
             return
           }
           if (!depositManagerId) {
-            handleError(null, "請選擇管理者/收款者");
+            handleError(null, "please select manager/receiver");
             setSaving(false);
             return;
           }
           if (depositParticipantIds.length === 0) {
-            handleError(null, "請選擇出資者");
+            handleError(null, "please select contributors");
             setSaving(false);
             return;
           }
 
           const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts);
           if (!computed.ok) {
-            handleError(null, "分攤金額不可超過總金額");
+            handleError(null, "split amount cannot exceed total amount");
             setSaving(false);
             return;
           }
@@ -818,7 +825,7 @@ export default function AddTransactionPage() {
             .single();
 
           if (txError || !transaction) {
-            handleError(txError, '保存交易失敗');
+            handleError(txError, 'save transaction failed');
             setSaving(false);
             return;
           }
@@ -841,7 +848,7 @@ export default function AddTransactionPage() {
               .from("transactions")
               .delete()
               .eq('id', transaction.id);
-            handleError(splitError, '保存分攤失敗，已取消交易');
+            handleError(splitError, 'save split failed, transaction cancelled');
             setSaving(false);
             return;
           }
@@ -875,7 +882,7 @@ export default function AddTransactionPage() {
           .single();
 
         if (txError || !transaction) {
-          handleError(txError, '保存交易失敗');
+          handleError(txError, 'save transaction failed');
           setSaving(false);
           return;
         }
@@ -897,7 +904,7 @@ export default function AddTransactionPage() {
             .from("transactions")
             .delete()
             .eq('id', transaction.id);
-          handleError(splitError, '保存分攤失敗，已取消交易');
+          handleError(splitError, 'save split failed, transaction cancelled');
           setSaving(false);
           return;
         }
@@ -910,7 +917,7 @@ export default function AddTransactionPage() {
       }
     } else {
       if (payerId === DEPOSIT_PAYER_ID && !isMultiMemberLedger) {
-        handleError(null, '此帳本無其他成員，無法使用儲值金')
+        handleError(null, 'this book has no other members, cannot use deposit')
         setSaving(false)
         return
       }
@@ -932,7 +939,7 @@ export default function AddTransactionPage() {
         ])
 
         if (incomeResult.error || expenseResult.error) {
-          handleError(incomeResult.error || expenseResult.error, '無法取得儲值金餘額')
+          handleError(incomeResult.error || expenseResult.error, 'cannot get deposit balance')
           setSaving(false)
           return
         }
@@ -942,7 +949,7 @@ export default function AddTransactionPage() {
         const depositBalance = depositIncome - depositExpense
 
         if (totalInt > depositBalance) {
-          handleError(null, '儲值金不足，無法保存')
+          handleError(null, 'deposit balance is not enough, cannot save')
           setSaving(false)
           return
         }
@@ -1093,7 +1100,7 @@ export default function AddTransactionPage() {
 
       if (txError || !transaction) {
         console.error("Error creating transaction:", txError);
-        handleError(txError, `保存失敗: ${txError?.message || 'Unknown error'}`);
+        handleError(txError, `save failed: ${txError?.message || 'Unknown error'}`);
         setSaving(false);
         return;
       }
@@ -1129,7 +1136,7 @@ export default function AddTransactionPage() {
             .from("transactions")
             .delete()
             .eq('id', transaction.id);
-          handleError(splitError, '保存分攤失敗，已取消交易');
+          handleError(splitError, 'save split failed, transaction cancelled');
           setSaving(false);
           return;
         }
@@ -1144,7 +1151,7 @@ export default function AddTransactionPage() {
       router.push("/");
     }
     } catch (error: any) {
-      handleError(error, '保存失敗');
+      handleError(error, 'save failed');
     } finally {
       setSaving(false);
     }
@@ -1211,7 +1218,7 @@ export default function AddTransactionPage() {
   // ========== CONDITIONAL RENDERING (AFTER ALL HOOKS) ==========
   // Show loading spinner while user is loading
   if (isLoadingUserFromHook) {
-    return <Loading fullScreen message="載入中..." />;
+    return <Loading fullScreen message="Loading..." />;
   }
 
   // Check role from URL parameter - if Viewer, show permission denied UI
@@ -1226,15 +1233,15 @@ export default function AddTransactionPage() {
                 block
               </span>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">無權限記帳</h2>
-            <p className="text-gray-500 mb-8">您只有檢視權限，無法進行記帳操作</p>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">No permission to record</h2>
+            <p className="text-gray-500 mb-8">You only have view permission, cannot perform recording operations</p>
           </div>
           <button
             onClick={() => router.push('/')}
             className="w-full max-w-xs mx-auto h-14 bg-primary hover:bg-primary/90 rounded-full text-white font-bold text-lg shadow-lg shadow-primary/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
           >
             <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>arrow_back</span>
-            <span>返回首頁</span>
+            <span>Back to Home</span>
           </button>
         </div>
       </div>
@@ -1269,7 +1276,7 @@ export default function AddTransactionPage() {
                     : "text-text-muted hover:text-text-main"
                 }`}
               >
-                支出
+                Expense
               </button>
               <button
                 onClick={() => setTransactionType("income")}
@@ -1279,7 +1286,7 @@ export default function AddTransactionPage() {
                     : "text-text-muted hover:text-text-main"
                 }`}
               >
-                收入
+                Income
               </button>
             </div>
           </div>
@@ -1324,7 +1331,7 @@ export default function AddTransactionPage() {
         {transactionType === "expense" && splitSummary && splitSummary.debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
           <div className="mt-6 mb-8 flex items-center justify-center gap-4 text-sm font-medium px-6 w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col items-center gap-1">
-              <span className="text-text-muted text-xs">付款人 Payer</span>
+              <span className="text-text-muted text-xs">Payer</span>
               <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100">
                 <div className="h-6 w-6 rounded-full bg-gray-200 flex items-center justify-center text-xs overflow-hidden">
                   {splitSummary.payer.avatar ? (
@@ -1340,7 +1347,7 @@ export default function AddTransactionPage() {
             <span className="material-symbols-outlined text-text-muted/50 mt-4">arrow_back</span>
 
             <div className="flex flex-col items-center gap-1">
-              <span className="text-text-muted text-xs">欠款人 Debtors</span>
+              <span className="text-text-muted text-xs">Debtors</span>
               <div className="flex flex-col gap-1">
                 {splitSummary.debtors.map((debtor) => (
                   <div
@@ -1367,7 +1374,7 @@ export default function AddTransactionPage() {
           <div className="px-6 w-full mt-4 mb-6" onClick={(e) => e.stopPropagation()}>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-                詳細分攤 Details
+                Detailed Split Details
               </div>
               <div className="flex flex-col gap-2">
                 {splitSummary.debtors.map((debtor) => (
@@ -1379,7 +1386,7 @@ export default function AddTransactionPage() {
                       {debtor.name}
                     </span>
                     <span className="text-[11px] text-text-muted whitespace-nowrap">
-                      公費 {((debtor.publicShare || 0).toFixed(0))} + 個人 {((debtor.personalShare || 0).toFixed(0))}
+                      Public Share {((debtor.publicShare || 0).toFixed(0))} + Personal {((debtor.personalShare || 0).toFixed(0))}
                     </span>
                   </div>
                 ))}
@@ -1417,7 +1424,7 @@ export default function AddTransactionPage() {
                       incomeMode === 'personal' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
                     }`}
                   >
-                    個人收入
+                    Personal Income
                   </button>
                   {isMultiMemberLedger && (
                     <button
@@ -1426,7 +1433,7 @@ export default function AddTransactionPage() {
                         incomeMode === 'deposit' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
                       }`}
                     >
-                      儲值
+                        Deposit
                     </button>
                   )}
                 </div>
@@ -1444,7 +1451,7 @@ export default function AddTransactionPage() {
                     className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
                   >
                     <span className="text-sm font-bold text-[#657486] tracking-wide">
-                      管理者/收款者
+                      Manager/Receiver
                     </span>
                     <div className="flex items-center gap-2">
                       {(() => {
@@ -1476,7 +1483,7 @@ export default function AddTransactionPage() {
                     className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
                   >
                     <span className="text-sm font-bold text-[#657486] tracking-wide">
-                      出資者
+                      Contributors
                     </span>
                     <div className="flex -space-x-2">
                       {depositParticipantIds.map((id, index) => {
@@ -1723,26 +1730,28 @@ export default function AddTransactionPage() {
                 </div>
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                  <span className="material-symbols-outlined">groups</span>
+            {isMultiMemberLedger && (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <span className="material-symbols-outlined">groups</span>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-text-main">Shared expense</h4>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-semibold text-text-main">Shared expense</h4>
-                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isPublicExpense}
+                    onChange={(e) => setIsPublicExpense(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isPublicExpense}
-                  onChange={(e) => setIsPublicExpense(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-              </label>
-            </div>
-            {isPublicExpense && (
+            )}
+            {isPublicExpense && isMultiMemberLedger && (
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
                 Shared expense Amount ($)
@@ -1945,7 +1954,7 @@ export default function AddTransactionPage() {
                 type="text"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder={transactionType === "income" ? "這筆錢從哪裡來的?" : "這筆錢花在哪裡?"}
+                placeholder={transactionType === "income" ? "where did this money come from?" : "where did this money go?"}
                 className="bg-transparent border-none outline-none text-[#121417] placeholder:text-gray-400 w-full text-base font-medium focus:ring-0 p-0 m-0 leading-normal"
               />
             </div>
@@ -1990,7 +1999,7 @@ export default function AddTransactionPage() {
               {saving ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-[3px] border-white/30 border-t-white"></div>
-                  <span>儲存中...</span>
+                  <span>saving...</span>
                 </>
               ) : (
                 <>
@@ -2007,7 +2016,7 @@ export default function AddTransactionPage() {
                       d="M5 13l4 4L19 7"
                     />
                   </svg>
-                  <span>儲存</span>
+                  <span>save</span>
                 </>
               )}
             </div>

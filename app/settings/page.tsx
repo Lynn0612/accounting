@@ -223,8 +223,8 @@ export default function SettingsPage() {
           if (!createError && newLedger) {
             // Insert default categories for ledger
             const defaultCategories = [
-              { name: 'Food', icon: '🍱', type: 'Expense' },
-              { name: 'Travel', icon: '🚌', type: 'Expense' },
+              { name: 'Food', icon: '🍚', type: 'Expense' },
+              { name: 'Travel', icon: '🚗', type: 'Expense' },
               { name: 'Shop', icon: '🛍️', type: 'Expense' },
               { name: 'Rent', icon: '🏠', type: 'Expense' },
               { name: 'Fun', icon: '🎮', type: 'Expense' },
@@ -496,7 +496,7 @@ export default function SettingsPage() {
       setSelectedBook(null);
     } catch (error) {
       console.error('Error deleting book:', error);
-      showAlert('錯誤', '刪除帳本失敗，請重試');
+      showAlert('error', 'delete book failed, please try again');
     }
   };
 
@@ -946,7 +946,7 @@ export default function SettingsPage() {
 
           if (membersError) {
             console.error('Error adding members:', membersError);
-            showAlert('錯誤', '新增成員失敗，請重試');
+            showAlert('Error', 'add member failed, please try again');
             return;
           }
         } else {
@@ -963,7 +963,7 @@ export default function SettingsPage() {
 
           if (membersError) {
             console.error('Error adding members:', membersError);
-            showAlert('錯誤', '新增成員失敗，請重試');
+            showAlert('Error', 'add member failed, please try again');
             return;
           }
         }
@@ -974,7 +974,7 @@ export default function SettingsPage() {
         setSelectedMemberIds([]);
       } catch (error) {
         console.error('Error adding members:', error);
-        showAlert('錯誤', '新增成員失敗，請重試');
+        showAlert('Error', 'add member failed, please try again');
       }
     }
   };
@@ -995,7 +995,7 @@ export default function SettingsPage() {
     if (!selectedBook) return;
     
     if (memberId === currentUserId || memberId === "user1") {
-      showAlert('提示', '您無法將自己從帳本中移除');
+      showAlert('Warning', 'you cannot remove yourself from the book');
       return;
     }
 
@@ -1008,7 +1008,7 @@ export default function SettingsPage() {
 
       if (error) {
         console.error('Error removing member:', error);
-        showAlert('錯誤', '移除成員失敗，請重試');
+        showAlert('Error', 'remove member failed, please try again');
         return;
       }
 
@@ -1022,7 +1022,7 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('Error removing member:', error);
-      showAlert('錯誤', '移除成員失敗，請重試');
+      showAlert('Error', 'remove member failed, please try again');
     }
   };
 
@@ -1037,13 +1037,13 @@ export default function SettingsPage() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError) {
         console.error('Error getting user:', userError);
-        showAlert('錯誤', `驗證錯誤: ${userError.message}`);
+        showAlert('Error', `validation error: ${userError.message}`);
         setCreatingLedger(false);
         return;
       }
 
       if (!user) {
-        showAlert('提示', '請先登入以創建帳本');
+        showAlert('Warning', 'please login to create a book');
         setCreatingLedger(false);
         return;
       }
@@ -1071,7 +1071,7 @@ export default function SettingsPage() {
 
       if (bookError) {
         console.error('Error creating account book:', bookError);
-        showAlert('錯誤', `創建帳本失敗: ${bookError.message}`);
+        showAlert('Error', `create book failed: ${bookError.message}`);
         setCreatingLedger(false);
         return;
       }
@@ -1105,9 +1105,9 @@ export default function SettingsPage() {
 
         if (categoriesError) {
           console.error('Error creating default categories:', categoriesError);
-          showAlert('警告', `創建預設類別失敗: ${categoriesError.message}`);
+          showAlert('Warning', `create default categories failed: ${categoriesError.message}`);
         } else {
-          console.log(`成功創建 ${insertedCategories?.length || 0} 個預設類別`);
+          console.log(`successfully created ${insertedCategories?.length || 0} default categories`);
         }
       }
 
@@ -1232,7 +1232,7 @@ export default function SettingsPage() {
       router.push('/');
     } catch (error: any) {
       console.error('Unexpected error creating ledger:', error);
-      showAlert('錯誤', `發生錯誤: ${error?.message || '請重試'}`);
+      showAlert('Error', `error: ${error?.message || 'please try again'}`);
     } finally {
       setCreatingLedger(false);
     }
@@ -1876,9 +1876,9 @@ export default function SettingsPage() {
             <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
               <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-3">刪除成員</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">delete member</h3>
             <p className="text-slate-500 text-sm mb-8 leading-relaxed px-2">
-              確定要將 "{memberToDelete.name}" 從此帳本中移除嗎？
+            Are you sure you want to remove "{memberToDelete.name}" from this book?
             </p>
             <div className="grid grid-cols-2 gap-4 w-full">
               <button
@@ -1888,13 +1888,13 @@ export default function SettingsPage() {
                 }}
                 className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-colors"
               >
-                取消
+                cancel
               </button>
               <button
                 onClick={handleDeleteMember}
                 className="py-3.5 px-4 bg-red-500 hover:bg-red-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-red-500/30 transition-colors"
               >
-                刪除
+                delete
               </button>
             </div>
           </div>

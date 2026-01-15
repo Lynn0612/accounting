@@ -356,7 +356,7 @@ export default function StatisticsPage() {
       </div>
 
       {loading ? (
-        <Loading message="載入中..." />
+        <Loading message="Loading..." />
       ) : (
         <>
           <div className="mx-6 mb-8 bg-white rounded-[32px] p-8 shadow-soft flex flex-col items-center relative overflow-hidden">
@@ -408,7 +408,7 @@ export default function StatisticsPage() {
 
             {statType === 'income' && isMultiMemberLedger && (
               <div className="w-full mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-sm font-semibold text-text-secondary">目前總儲值金</span>
+                <span className="text-sm font-semibold text-text-secondary"> Total Deposit</span>
                 <span className="text-sm font-bold text-text-main">{formatAmountSimple(depositBalance)}</span>
               </div>
             )}

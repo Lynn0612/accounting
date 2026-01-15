@@ -20,8 +20,8 @@ export default function ConfirmModal({
   onConfirm,
   title,
   message,
-  confirmText = '確認',
-  cancelText = '取消',
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
   type = 'info',
   isLoading = false,
 }: ConfirmModalProps) {
@@ -62,7 +62,7 @@ export default function ConfirmModal({
               {isLoading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                  <span>處理中...</span>
+                  <span>Processing...</span>
                 </>
               ) : (
                 confirmText
@@ -79,7 +79,7 @@ export default function ConfirmModal({
               {isLoading ? (
                 <>
                   <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                  <span>處理中...</span>
+                  <span>Processing...</span>
                 </>
               ) : (
                 confirmText

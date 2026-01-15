@@ -32,7 +32,6 @@ export default function TransactionsPage() {
   const { activeLedger } = useLedger()
   const { data: user } = useUser()
   const { data: participants = [] } = useParticipants(activeLedger?.id || null)
-  const supabase = useMemo(() => createClient(), [])
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const [startDate, setStartDate] = useState<Date>(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1)
@@ -90,7 +89,7 @@ export default function TransactionsPage() {
         let payerText = ''
         if (tx.type !== 'income') {
           if (tx.expense_payment_source === 'deposit' || tx.income_mode === 'deposit') {
-            payerText = '儲值金'
+            payerText = 'Deposit'
           } else {
           payerText = 'Shared'
           if (tx.payer_id === user.id) {
@@ -100,7 +99,7 @@ export default function TransactionsPage() {
           }
           }
         } else if (tx.income_mode === 'deposit') {
-          payerText = '儲值金'
+          payerText = 'Deposit'
         }
 
       const categoryName = category?.name || 'Other'

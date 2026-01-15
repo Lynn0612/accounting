@@ -408,7 +408,7 @@ export default function ComparePage() {
       </header>
 
       {loading ? (
-        <Loading message="載入中..." />
+        <Loading message="Loading..." />
       ) : (
         <div className="px-4 pb-12 pt-2 flex flex-col gap-6">
           <div className="grid grid-cols-2 gap-4">

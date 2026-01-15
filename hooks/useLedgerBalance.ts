@@ -33,41 +33,41 @@ const getLedgerBalance = async ({ ledgerId, ledgerType }: LedgerBalanceParams): 
   // Fetch income and expense transactions in parallel
   const fetchIncome = async () => {
     let result = await supabase
+    .from('transactions')
+    .select('amount')
+    .eq(transactionIdColumn, ledgerId)
+    .eq('type', 'income')
+    .eq('payer_id', user.id)
+    .or('income_mode.eq.personal,income_mode.is.null')
+
+    if (result.error) {
+      // Fallback if income_mode column doesn't exist
+      result = await supabase
       .from('transactions')
       .select('amount')
       .eq(transactionIdColumn, ledgerId)
       .eq('type', 'income')
       .eq('payer_id', user.id)
-      .or('income_mode.eq.personal,income_mode.is.null')
-    
-    if (result.error) {
-      // Fallback if income_mode column doesn't exist
-      result = await supabase
-        .from('transactions')
-        .select('amount')
-        .eq(transactionIdColumn, ledgerId)
-        .eq('type', 'income')
-        .eq('payer_id', user.id)
-    }
+  }
     return result
   }
 
   const fetchExpenseTxs = async () => {
     let result = await supabase
+    .from('transactions')
+    .select('id, amount, payer_id')
+    .eq(transactionIdColumn, ledgerId)
+    .eq('type', 'expense')
+    .neq('expense_payment_source', 'deposit')
+
+    if (result.error) {
+      // Fallback if expense_payment_source column doesn't exist
+      result = await supabase
       .from('transactions')
       .select('id, amount, payer_id')
       .eq(transactionIdColumn, ledgerId)
       .eq('type', 'expense')
-      .neq('expense_payment_source', 'deposit')
-    
-    if (result.error) {
-      // Fallback if expense_payment_source column doesn't exist
-      result = await supabase
-        .from('transactions')
-        .select('id, amount, payer_id')
-        .eq(transactionIdColumn, ledgerId)
-        .eq('type', 'expense')
-    }
+  }
     return result
   }
 
@@ -86,11 +86,11 @@ const getLedgerBalance = async ({ ledgerId, ledgerType }: LedgerBalanceParams): 
     
     let repaymentsReceived = 0
     let repaymentsPaid = 0
-    if (!settlementsReceivedResult.error) {
-      repaymentsReceived = settlementsReceivedResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
-    }
-    if (!settlementsPaidResult.error) {
-      repaymentsPaid = settlementsPaidResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+      if (!settlementsReceivedResult.error) {
+        repaymentsReceived = settlementsReceivedResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+      }
+      if (!settlementsPaidResult.error) {
+        repaymentsPaid = settlementsPaidResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
     }
     const balance = (income - expense) + (repaymentsReceived - repaymentsPaid)
     return { income, expense, balance }
@@ -113,28 +113,28 @@ const getLedgerBalance = async ({ ledgerId, ledgerType }: LedgerBalanceParams): 
   // Fetch self splits and settlements in parallel (they don't depend on each other)
   const fetchSelfSplits = async () => {
     let result = await supabase
-      .from('transaction_splits')
-      .select(`
-        transaction_id,
-        amount,
-        transactions!inner (
-          type,
-          expense_payment_source
-        )
-      `)
-      .eq(splitsScopeColumn, ledgerId)
-      .eq('user_id', user.id)
-      .eq('transactions.type', 'expense')
-      .neq('transactions.expense_payment_source', 'deposit')
-    
+    .from('transaction_splits')
+    .select(`
+      transaction_id,
+      amount,
+      transactions!inner (
+        type,
+        expense_payment_source
+      )
+    `)
+    .eq(splitsScopeColumn, ledgerId)
+    .eq('user_id', user.id)
+    .eq('transactions.type', 'expense')
+    .neq('transactions.expense_payment_source', 'deposit')
+
     if (result.error) {
       // Fallback if expense_payment_source column doesn't exist
       result = await supabase
-        .from('transaction_splits')
-        .select('transaction_id, amount')
-        .eq(splitsScopeColumn, ledgerId)
-        .eq('user_id', user.id)
-    }
+      .from('transaction_splits')
+      .select('transaction_id, amount')
+      .eq(splitsScopeColumn, ledgerId)
+      .eq('user_id', user.id)
+  }
     return result
   }
 
@@ -209,12 +209,12 @@ const getLedgerBalance = async ({ ledgerId, ledgerType }: LedgerBalanceParams): 
   const [settlementsReceivedResult, settlementsPaidResult] = settlementsResults
   let repaymentsReceived = 0
   let repaymentsPaid = 0
-  
-  if (!settlementsReceivedResult.error) {
-    repaymentsReceived = settlementsReceivedResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
-  }
-  if (!settlementsPaidResult.error) {
-    repaymentsPaid = settlementsPaidResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+    
+    if (!settlementsReceivedResult.error) {
+      repaymentsReceived = settlementsReceivedResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
+    }
+    if (!settlementsPaidResult.error) {
+      repaymentsPaid = settlementsPaidResult.data?.reduce((sum, s) => sum + Number(s.amount || 0), 0) || 0
   }
   
   // Balance = (Income - Expense) + (Repayments Received - Repayments Paid)

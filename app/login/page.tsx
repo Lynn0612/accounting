@@ -42,7 +42,7 @@ export default function LoginPage() {
       
       if (error) {
         console.error('Debug Login Error:', error.message);
-        setAlertMessage('測試登入失敗，請確認 Supabase 已建立該帳號');
+        setAlertMessage('Debug Login Failed, please confirm that the Supabase account has been created');
         setShowAlertModal(true);
       } else {
         console.log('Debug Login Successful:', data.user.id);
@@ -51,7 +51,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       console.error('Debug Login Exception:', err);
-      setAlertMessage('測試登入發生錯誤');
+      setAlertMessage('Debug Login Error');
       setShowAlertModal(true);
     } finally {
       setIsDebugLoading(false);
@@ -65,7 +65,7 @@ export default function LoginPage() {
       const password = process.env.NEXT_PUBLIC_DEBUG_USER2_PASSWORD;
 
       if (!email || !password) {
-        setAlertMessage('請在 .env.local 設定 NEXT_PUBLIC_DEBUG_USER2_EMAIL 與 NEXT_PUBLIC_DEBUG_USER2_PASSWORD');
+        setAlertMessage('Please set NEXT_PUBLIC_DEBUG_USER2_EMAIL and NEXT_PUBLIC_DEBUG_USER2_PASSWORD in .env.local');
         setShowAlertModal(true);
         return;
       }
@@ -74,7 +74,7 @@ export default function LoginPage() {
 
       if (error) {
         console.error('Debug Login2 Error:', error.message);
-        setAlertMessage('測試帳號2登入失敗，請確認 Supabase 已建立該帳號');
+        setAlertMessage('Debug Login2 Failed, please confirm that the Supabase account has been created');
         setShowAlertModal(true);
       } else {
         console.log('Debug Login2 Successful:', data.user.id);
@@ -82,7 +82,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       console.error('Debug Login2 Exception:', err);
-      setAlertMessage('測試帳號2登入發生錯誤');
+      setAlertMessage('Debug Login2 Error');
       setShowAlertModal(true);
     } finally {
       setIsDebugLoading(false);
@@ -141,14 +141,14 @@ export default function LoginPage() {
                   disabled={isDebugLoading}
                   className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isDebugLoading ? '登入中...' : 'Debug Login (測試帳號1)'}
+                  {isDebugLoading ? 'Logging in...' : 'Debug Login (Test Account 1)'}
                 </button>
                 <button
                   onClick={handleDebugLogin2}
                   disabled={isDebugLoading}
                   className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isDebugLoading ? '登入中...' : 'Debug Login (測試帳號2)'}
+                  {isDebugLoading ? 'Logging in...' : 'Debug Login (Test Account 2)'}
                 </button>
               </div>
             )}
@@ -183,9 +183,9 @@ export default function LoginPage() {
         isOpen={showAlertModal}
         onClose={() => setShowAlertModal(false)}
         onConfirm={() => setShowAlertModal(false)}
-        title="錯誤"
+        title="Error"
         message={alertMessage}
-        confirmText="確定"
+        confirmText="Confirm"
         cancelText=""
         type="warning"
       />

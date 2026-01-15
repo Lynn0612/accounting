@@ -253,7 +253,7 @@ export default function OutstandingPage() {
   }, [fetchData]);
 
   if (!activeLedger?.id) {
-    return <Loading fullScreen message="載入中..." />;
+    return <Loading fullScreen message="Loading..." />;
   }
 
   return (
@@ -285,7 +285,7 @@ export default function OutstandingPage() {
         <div className="mb-8">
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-lg font-bold text-text-main flex items-center gap-2">
-              我欠誰的錢 <span className="text-text-muted font-normal text-sm">(Who I Owe)</span>
+              I Owe Who <span className="text-text-muted font-normal text-sm">(Who I Owe)</span>
             </h2>
           </div>
           <div className="bg-white rounded-card p-2 shadow-soft flex flex-col gap-1">
@@ -318,7 +318,7 @@ export default function OutstandingPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3 px-1">
             <h2 className="text-lg font-bold text-text-main flex items-center gap-2">
-              誰欠我的錢 <span className="text-text-muted font-normal text-sm">(Who Owes Me)</span>
+              Who Owes Me <span className="text-text-muted font-normal text-sm">(Who Owes Me)</span>
             </h2>
           </div>
           <div className="bg-white rounded-card p-2 shadow-soft flex flex-col gap-1">

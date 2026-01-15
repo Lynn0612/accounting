@@ -7,10 +7,12 @@ import { useCreateCategory } from "@/hooks/useCategories";
 import ConfirmModal from "@/components/ConfirmModal";
 
 const emojiIcons = [
-  "🍱", "☕", "🍸", "🥛",
-  "🚂", "🚗", "✈️", "🛍️",
-  "👔", "🎮", "🎬", "💪",
-  "🏥", "🎓", "🐾",
+  "🍚", "🛍️", "🏠",
+  "🚗", "✈️", "🪙",
+  "🎮", "💰", "💼", "🎁",
+  "📈", "🤝", "🐾","🍰", 
+  "🍸", "🎬", "💪",
+  "🏥", "📖",
 ];
 
 interface CreateCategoryModalProps {
@@ -40,7 +42,7 @@ export default function CreateCategoryModal({
     }
 
     if (!activeLedger) {
-      setErrorMessage("請先選擇帳本");
+      setErrorMessage("please select a book");
       setShowErrorModal(true);
       return;
     }
@@ -69,7 +71,7 @@ export default function CreateCategoryModal({
       onClose();
     } catch (error: any) {
       console.error("Error creating category:", error);
-      setErrorMessage("創建類別失敗: " + (error.message || "Unknown error"));
+      setErrorMessage("create category failed: " + (error.message || "Unknown error"));
       setShowErrorModal(true);
     }
   };

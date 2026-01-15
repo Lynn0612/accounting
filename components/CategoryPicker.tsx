@@ -94,7 +94,7 @@ export default function CategoryPicker({
         setShowDeleteModal(false);
         setCategoryToDelete(null);
         setIsCheckingUsage(false);
-        setErrorMessage('此類別為特殊類別，無法刪除');
+        setErrorMessage('this category is a special category, cannot be deleted');
         setShowErrorModal(true);
         return;
       }
@@ -105,7 +105,7 @@ export default function CategoryPicker({
         setShowDeleteModal(false);
         setCategoryToDelete(null);
         setIsCheckingUsage(false);
-        setErrorMessage('此類別已被使用，無法刪除');
+        setErrorMessage('this category is used, cannot be deleted');
         setShowErrorModal(true);
         return;
       }
@@ -125,7 +125,7 @@ export default function CategoryPicker({
       }
     } catch (error: any) {
       console.error('Error deleting category:', error);
-      setErrorMessage('刪除類別失敗: ' + (error.message || 'Unknown error'));
+      setErrorMessage('delete category failed: ' + (error.message || 'Unknown error'));
       setShowErrorModal(true);
     } finally {
       setIsCheckingUsage(false);
@@ -196,9 +196,9 @@ export default function CategoryPicker({
             <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
               <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-3">刪除類別</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-3">delete category</h3>
             <p className="text-slate-500 text-sm mb-8 leading-relaxed px-2">
-              確定要刪除 "{categoryToDelete.name}" 嗎？
+            Are you sure you want to delete "{categoryToDelete.name}" ？
             </p>
             <div className="grid grid-cols-2 gap-4 w-full">
               <button
@@ -209,7 +209,7 @@ export default function CategoryPicker({
                 disabled={isCheckingUsage}
                 className="py-3.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl font-bold text-sm transition-colors disabled:opacity-50"
               >
-                取消
+                cancel
               </button>
               <button
                 onClick={handleConfirmDelete}
@@ -219,10 +219,10 @@ export default function CategoryPicker({
                 {isCheckingUsage ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                    <span>檢查中...</span>
+                    <span>checking...</span>
                   </>
                 ) : (
-                  '刪除'
+                  'delete'
                 )}
               </button>
             </div>
@@ -234,9 +234,9 @@ export default function CategoryPicker({
         isOpen={showErrorModal}
         onClose={() => setShowErrorModal(false)}
         onConfirm={() => setShowErrorModal(false)}
-        title="提示"
+        title="warning"
         message={errorMessage}
-        confirmText="確定"
+        confirmText="confirm"
         cancelText=""
         type="warning"
       />

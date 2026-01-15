@@ -10,7 +10,7 @@ interface LoadingProps {
 
 export default function Loading({ 
   fullScreen = false, 
-  message = "載入中...",
+  message = "Loading...",
   size = 'md'
 }: LoadingProps) {
   const sizeClasses = {
