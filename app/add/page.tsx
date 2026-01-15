@@ -891,6 +891,14 @@ export default function AddTransactionPage() {
             return;
           }
           const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0);
+          
+          // 檢查總額和分攤金額是否一致
+          if (Math.ceil(splitSum) !== totalInt) {
+            handleError(null, `split amount total (${Math.ceil(splitSum)}) does not match input total (${totalInt})`);
+            setSaving(false);
+            return;
+          }
+          
           const incomeAmount = Math.ceil(splitSum);
 
           const transactionData: any = {
@@ -1548,7 +1556,7 @@ export default function AddTransactionPage() {
                       incomeMode === 'personal' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
                     }`}
                   >
-                    Personal Income
+                     Personal Income
                   </button>
                   {isMultiMemberLedger && (
                     <button
@@ -1575,7 +1583,7 @@ export default function AddTransactionPage() {
                     className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
                   >
                     <span className="text-sm font-bold text-[#657486] tracking-wide">
-                      Manager/Receiver
+                    Manager/Receiver
                     </span>
                     <div className="flex items-center gap-2">
                       {(() => {
@@ -1607,7 +1615,7 @@ export default function AddTransactionPage() {
                     className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
                   >
                     <span className="text-sm font-bold text-[#657486] tracking-wide">
-                      Contributors
+                    Contributors
                     </span>
                     <div className="flex -space-x-2">
                       {depositParticipantIds.map((id, index) => {
@@ -1713,7 +1721,7 @@ export default function AddTransactionPage() {
                 className={`flex items-center justify-between ${payerId !== DEPOSIT_PAYER_ID ? 'mb-5 border-b border-gray-100 pb-5' : ''} cursor-pointer`}
               >
                 <span className="text-sm font-bold text-[#657486] tracking-wide">
-                  Payer
+                Payer
                 </span>
                 <div className="flex items-center gap-2">
                   {(() => {

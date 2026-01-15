@@ -101,6 +101,10 @@ export default function SelectParticipants({
                       className="size-12 rounded-full object-cover border-2 border-white shadow-sm"
                       src={payer.avatar}
                     />
+                  ) : payer.id === "__DEPOSIT__" ? (
+                    <div className="size-12 rounded-full bg-primary flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
+                      <span className="material-symbols-outlined">account_balance_wallet</span>
+                    </div>
                   ) : (
                     <div className="size-12 rounded-full bg-primary flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
                       {payer.name[0]}
@@ -135,7 +139,7 @@ export default function SelectParticipants({
             </h3>
             <div className="space-y-3">
               {participants
-                .filter((p) => p.id !== payerId && p.id !== '__DEPOSIT__')
+                .filter((p) => p.id !== payerId && (p.id !== '__DEPOSIT__' || single))
                 .map((participant) => {
                   const isSelected = localSelected.includes(participant.id);
                   return (
@@ -153,6 +157,10 @@ export default function SelectParticipants({
                         ) : participant.name === "Coco" ? (
                           <div className="size-12 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-500 font-bold text-lg border border-yellow-100">
                             C
+                          </div>
+                        ) : participant.id === "__DEPOSIT__" ? (
+                          <div className="size-12 rounded-full bg-blue-50 flex items-center justify-center text-primary font-bold text-lg border border-blue-100">
+                            <span className="material-symbols-outlined">account_balance_wallet</span>
                           </div>
                         ) : (
                           <div className="size-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-bold border border-gray-100">

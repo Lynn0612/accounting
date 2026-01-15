@@ -254,7 +254,7 @@ serve(async (req) => {
                   contents: [
                     {
                       type: "text",
-                      text: "總收入",
+                      text: "Total Income",
                       size: "sm",
                       color: "#666666"
                     },

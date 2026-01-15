@@ -764,6 +764,14 @@ export default function EditTransactionPage() {
               return
             }
             const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0)
+            
+            // 檢查總額和分攤金額是否一致
+            if (Math.ceil(splitSum) !== totalInt) {
+              handleError(null, `split amount total (${Math.ceil(splitSum)}) does not match input total (${totalInt})`)
+              setSaving(false)
+              return
+            }
+            
             const incomeAmount = Math.ceil(splitSum)
 
             const { error: updateError } = await supabase
@@ -1872,7 +1880,7 @@ export default function EditTransactionPage() {
                         incomeMode === 'deposit' ? 'bg-primary text-white shadow-sm' : 'text-text-muted hover:text-text-main'
                       }`}
                     >
-                        Deposit
+                    Deposit
                     </button>
                   )}
                 </div>
@@ -2022,9 +2030,9 @@ export default function EditTransactionPage() {
                 }}
                 className={`flex items-center justify-between ${payerId !== DEPOSIT_PAYER_ID ? 'mb-5 border-b border-gray-100 pb-5' : ''} cursor-pointer`}
               >
-                <span className="text-sm font-bold text-[#657486] tracking-wide">
+                  <span className="text-sm font-bold text-[#657486] tracking-wide">
                   Payer
-                </span>
+                  </span>
                 <div className="flex items-center gap-2">
                   {(() => {
                     const p = expensePayerOptions().find((x) => x.id === payerId)
@@ -2052,7 +2060,7 @@ export default function EditTransactionPage() {
               {payerId !== DEPOSIT_PAYER_ID && (
                 <>
               <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
-                Split with
+              Split with
               </label>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex -space-x-3 overflow-hidden p-1">
@@ -2156,9 +2164,9 @@ export default function EditTransactionPage() {
 
               {isPublicExpense && isMultiMemberLedger && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
-                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-                    Shared expense Amount ($)
-                  </label>
+                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                Shared expense Amount ($)
+                </label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2214,7 +2222,7 @@ export default function EditTransactionPage() {
 
                   <div className="mt-4">
                     <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-                      Shared with (Shared expense)
+                    Shared with (Shared expense)
                     </label>
                     <div className="flex items-center justify-between">
                       <div className="flex -space-x-3 overflow-hidden p-1">
