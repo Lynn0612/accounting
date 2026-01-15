@@ -424,7 +424,7 @@ export default function AddTransactionPage() {
   }, [])
 
   // Update public amount when amount changes
-  // - Default behavior (no custom split amounts): Total ÷ member count
+  // - Default behavior (no custom split amounts): Total ÷ public share member count
   // - If shared expense is enabled AND user has entered any Split with custom amounts:
   //   publicAmount defaults to (Total - sum(custom split amounts))
   useEffect(() => {
@@ -434,7 +434,11 @@ export default function AddTransactionPage() {
         const totalInt = Math.ceil(totalAmount);
         // Only auto-update if user hasn't manually set it
         if (!publicAmountManuallySet) {
-          const memberCount = Math.max(1, participants.length || 1);
+          // Use public share participants count if set, otherwise use all participants
+          const publicShareCount = publicShareParticipantIds.length > 0 
+            ? publicShareParticipantIds.length 
+            : participants.length;
+          const memberCount = Math.max(1, publicShareCount || 1);
 
           const sumCustom = selectedParticipantIds.reduce((sum, id) => {
             const v = customSplitAmounts[id];
@@ -453,7 +457,7 @@ export default function AddTransactionPage() {
       setPublicAmount('');
       setPublicAmountManuallySet(false);
     }
-  }, [amount, isPublicExpense, publicAmountManuallySet, participants.length, selectedParticipantIds, customSplitAmounts]);
+  }, [amount, isPublicExpense, publicAmountManuallySet, participants.length, publicShareParticipantIds.length, selectedParticipantIds, customSplitAmounts]);
 
   const getEffectiveSplitWithIds = useCallback((): string[] => {
     if (selectedParticipantIds.length > 0) return selectedParticipantIds;
@@ -607,8 +611,13 @@ export default function AddTransactionPage() {
       const publicShareCount = publicShareParticipants.length;
       if (publicShareCount === 0) return null;
 
-      // Public share: everyone rounds up; extra belongs to payer.
+      // Public share: everyone rounds up; extra belongs to payer (reduces payer's debt).
       const publicSharePerPerson = Math.ceil(finalPublicAmount / publicShareCount);
+      
+      // Calculate total public share after rounding up
+      const totalPublicShareRounded = publicSharePerPerson * publicShareCount;
+      // Calculate the excess from rounding (this should reduce payer's share)
+      const publicShareExcess = totalPublicShareRounded - finalPublicAmount;
 
       // Personal Share: Split among Split with participants (empty => payer-only)
       const personalShareParticipants = effectiveSplitWithIds.length > 0 ? effectiveSplitWithIds : payerId ? [payerId] : [];
@@ -640,6 +649,29 @@ export default function AddTransactionPage() {
           });
         }
       });
+      
+      // Calculate payer's share (reduced by excess from rounding)
+      const isPayerInPublicShare = publicShareParticipants.includes(payerId);
+      let payerAmount = 0;
+      if (isPayerInPublicShare) {
+        const payerPublicShare = Math.max(0, publicSharePerPerson - publicShareExcess);
+        const isPayerPersonalShare = personalShareParticipants.includes(payerId);
+        const payerPersonalShare = isPayerPersonalShare ? (personalShares.amounts[payerId] || 0) : 0;
+        payerAmount = Math.ceil(payerPublicShare + payerPersonalShare);
+      }
+      
+      const totalAmountToCollect = debtors.reduce((sum, d) => sum + d.amount, 0);
+      const payerOutOfPocket = Math.max(0, totalInt - totalAmountToCollect - payerAmount);
+
+      return {
+        payer: {
+          id: payer.id,
+          name: payer.name,
+          avatar: payer.avatar,
+          amount: payerAmount > 0 ? payerAmount : Math.ceil(payerOutOfPocket),
+        },
+        debtors,
+      };
     } else {
       // Regular expense (no public expense)
       const custom = computeCustomSplits(totalInt, effectiveSplitWithIds);
@@ -669,6 +701,7 @@ export default function AddTransactionPage() {
       debtors,
     };
   }, [transactionType, isPublicExpense, amount, publicAmount, selectedParticipantIds, publicShareParticipantIds, payerId, participants, isValidAmount, computeCustomSplits, getEffectiveSplitWithIds]);
+
 
   const handleSave = async () => {
     // Prevent double-clicking
@@ -1084,6 +1117,13 @@ export default function AddTransactionPage() {
         // Debtors should include EVERYONE who has either a personal share or a public share
         const allPotentialDebtorIds = [...new Set([...effectiveSplitWithIds, ...basePublicShareIds])];
         
+        // Calculate total public share after rounding up
+        const totalPublicShareRounded = publicSharePerPerson * publicShareCount;
+        // Calculate the excess from rounding (this should reduce payer's share)
+        const publicShareExcess = totalPublicShareRounded - publicInt;
+        
+        const effectivePayerId = payerId === DEPOSIT_PAYER_ID ? null : (payerId || user.id);
+        
         allPotentialDebtorIds.forEach((participantId) => {
           // Check if this participant is in public share participants
           const isInPublicShare = publicShareParticipants.includes(participantId);
@@ -1093,7 +1133,12 @@ export default function AddTransactionPage() {
           const isPersonalShare = personalShareParticipants.includes(participantId);
           const personalShare = isPersonalShare ? (personalShares.amounts[participantId] || 0) : 0;
           
-          const totalDebt = Math.ceil(publicShare + personalShare);
+          let totalDebt = Math.ceil(publicShare + personalShare);
+          
+          // If this is the payer and there's excess from rounding, reduce their debt
+          if (participantId === effectivePayerId && publicShareExcess > 0 && isInPublicShare) {
+            totalDebt = Math.max(0, totalDebt - publicShareExcess);
+          }
           
           if (totalDebt > 0) {
           splits.push({
@@ -1880,9 +1925,12 @@ export default function AddTransactionPage() {
                 <p className="text-xs text-text-muted mt-2">
                   Default: ${(() => {
                     const total = parseFloat(amount) || 0
-                    const memberCount = Math.max(1, participants.length || 1)
+                    const publicShareCount = publicShareParticipantIds.length > 0 
+                      ? publicShareParticipantIds.length 
+                      : participants.length;
+                    const memberCount = Math.max(1, publicShareCount || 1)
                     return Math.ceil(total / memberCount).toFixed(0)
-                  })()} (Total ÷ {Math.max(1, participants.length || 1)})
+                  })()} (Total ÷ {publicShareParticipantIds.length > 0 ? publicShareParticipantIds.length : participants.length})
                 </p>
                 <div className="mt-4">
                   <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">

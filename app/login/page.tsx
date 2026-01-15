@@ -173,7 +173,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="w-full pb-8 px-6 text-center z-10 shrink-0">
+        {/* <div className="w-full pb-8 px-6 text-center z-10 shrink-0">
           <p className="text-[#9aa5b1] text-xs font-normal leading-relaxed">
             By logging in, you agree to our{" "}
             <a
@@ -191,7 +191,7 @@ export default function LoginPage() {
             </a>
             .
           </p>
-        </div>
+        </div> */}
 
         <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[30%] bg-primary/5 rounded-full blur-[80px] pointer-events-none"></div>
         <div className="absolute bottom-[-5%] right-[-5%] w-[60%] h-[40%] bg-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
