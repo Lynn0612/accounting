@@ -56,10 +56,80 @@ export default function StatisticsPage() {
   const [loading, setLoading] = useState(true)
   const [showAllCategories, setShowAllCategories] = useState(false)
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
+  const [showDepositModal, setShowDepositModal] = useState(false)
+  const [depositByMember, setDepositByMember] = useState<Array<{ id: string; name: string; avatar?: string; amount: number }>>([])
+  const [loadingDepositDetails, setLoadingDepositDetails] = useState(false)
 
   useEffect(() => {
     loadStatistics()
   }, [statType, startDate, endDate, activeLedger])
+
+  const loadDepositDetails = async () => {
+    if (!activeLedger?.id) return
+    
+    setLoadingDepositDetails(true)
+    try {
+      const scopeColumn = activeLedger.type === 'account_book' ? 'book_id' : 'ledger_id'
+      
+      // 查詢所有儲值金收入交易及其分攤
+      const { data: depositTransactions, error } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount,
+          payer_id,
+          transaction_splits (
+            user_id,
+            amount
+          )
+        `)
+        .eq(scopeColumn, activeLedger.id)
+        .eq('type', 'income')
+        .eq('income_mode', 'deposit')
+      
+      if (error) {
+        console.error('Error loading deposit details:', error)
+        setLoadingDepositDetails(false)
+        return
+      }
+      
+      // 計算每個成員的儲值金總額
+      const memberAmounts: Record<string, number> = {}
+      
+      depositTransactions?.forEach((tx: any) => {
+        // 從 transaction_splits 取得每個成員的分攤金額
+        if (tx.transaction_splits && tx.transaction_splits.length > 0) {
+          tx.transaction_splits.forEach((split: any) => {
+            if (split.user_id) {
+              memberAmounts[split.user_id] = (memberAmounts[split.user_id] || 0) + Number(split.amount || 0)
+            }
+          })
+        }
+      })
+      
+      // 將結果與 participants 對應
+      const result = participants
+        .map(p => ({
+          id: p.id,
+          name: p.name,
+          avatar: p.avatar,
+          amount: memberAmounts[p.id] || 0
+        }))
+        .filter(p => p.amount > 0)
+        .sort((a, b) => b.amount - a.amount)
+      
+      setDepositByMember(result)
+    } catch (err) {
+      console.error('Error loading deposit details:', err)
+    } finally {
+      setLoadingDepositDetails(false)
+    }
+  }
+
+  const handleDepositClick = () => {
+    setShowDepositModal(true)
+    loadDepositDetails()
+  }
 
   const loadStatistics = async () => {
     setLoading(true)
@@ -407,8 +477,14 @@ export default function StatisticsPage() {
             </div>
 
             {statType === 'income' && isMultiMemberLedger && (
-              <div className="w-full mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-sm font-semibold text-text-secondary"> Total Deposit</span>
+              <div 
+                className="w-full mt-5 pt-4 border-t border-gray-100 flex items-center justify-between cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-2 rounded-lg transition-colors"
+                onClick={handleDepositClick}
+              >
+                <span className="text-sm font-semibold text-text-secondary flex items-center gap-1">
+                  Total Deposit
+                  <span className="material-symbols-outlined text-base text-text-muted">chevron_right</span>
+                </span>
                 <span className="text-sm font-bold text-text-main">{formatAmountSimple(depositBalance)}</span>
               </div>
             )}
@@ -622,6 +698,65 @@ export default function StatisticsPage() {
           </Link>
         </div>
       </nav>
+
+      {/* Deposit Details Modal */}
+      {showDepositModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center"
+          onClick={() => setShowDepositModal(false)}
+        >
+          <div 
+            className="bg-white w-full max-w-md rounded-t-3xl p-6 pb-8 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-text-main">Deposit by Member</h3>
+              <button 
+                onClick={() => setShowDepositModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <span className="material-symbols-outlined text-text-muted">close</span>
+              </button>
+            </div>
+            
+            {loadingDepositDetails ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : depositByMember.length === 0 ? (
+              <div className="text-center py-8 text-text-muted">
+                No deposit records found
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {depositByMember.map((member) => (
+                  <div 
+                    key={member.id}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary-light flex items-center justify-center overflow-hidden">
+                        {member.avatar ? (
+                          <img src={member.avatar} alt={member.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-white font-bold">{member.name[0]}</span>
+                        )}
+                      </div>
+                      <span className="font-semibold text-text-main">{member.name}</span>
+                    </div>
+                    <span className="font-bold text-primary">{formatAmountSimple(member.amount)}</span>
+                  </div>
+                ))}
+                
+                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+                  <span className="font-semibold text-text-muted">Total Balance</span>
+                  <span className="font-bold text-lg text-text-main">{formatAmountSimple(depositBalance)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

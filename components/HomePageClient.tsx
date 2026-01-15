@@ -142,7 +142,7 @@ const HomePageClient = memo(function HomePageClient({
     const transactionsToUse = monthlyTransactions || [];
     return {
       totalIncome: transactionsToUse
-        .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true) // 排除還款
+        .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true && tx.income_mode !== 'deposit') // 排除還款和儲值金
         .reduce((sum, tx) => sum + Number(tx.amount), 0),
       totalExpenses: transactionsToUse
         .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')

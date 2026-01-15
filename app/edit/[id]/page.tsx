@@ -1795,40 +1795,44 @@ export default function EditTransactionPage() {
             </div>
           )}
 
-          {/* More detailed breakdown for shared expense (keep spacing tidy, style aligned with /add) */}
-          {transactionType === 'expense' && isPublicExpense && debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
-            <div className="px-6 w-full mt-4 mb-6" onClick={(e) => e.stopPropagation()}>
-              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-                  Detailed Split Details
-                </div>
-                <div className="flex flex-col gap-2">
-                  {(debtors as Array<{ participant: Participant; amount: number; publicShare?: number; personalShare?: number }>)
-                    .filter((debtor) => 
-                      typeof debtor.publicShare === 'number' && typeof debtor.personalShare === 'number'
-                    )
-                    .map((debtor) => {
-                      const publicShare = typeof debtor.publicShare === 'number' ? debtor.publicShare : 0;
-                      const personalShare = typeof debtor.personalShare === 'number' ? debtor.personalShare : 0;
-                      return (
-                        <div
-                          key={`detail-${debtor.participant.id}`}
-                          className="w-full flex items-center justify-between gap-3 bg-white px-3 py-2 rounded-full shadow-sm border border-gray-100"
-                        >
-                          <span className="text-xs font-semibold text-text-main truncate">
-                            {debtor.participant.name}
-                          </span>
-                          <span className="text-[11px] text-text-muted whitespace-nowrap">
-                            Public Share {publicShare.toFixed(0)} + Personal {personalShare.toFixed(0)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                </div>
+        </div>
+
+        {/* More detailed breakdown for shared expense - positioned behind keypad with blur */}
+        {transactionType === 'expense' && isPublicExpense && debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
+          <div 
+            className={`px-6 w-full mt-4 mb-6 pointer-events-none transition-all duration-200 ${showKeypad ? 'opacity-40 blur-sm' : 'opacity-100'}`}
+            style={{ position: 'relative', zIndex: 1 }}
+          >
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                Detailed Split Details
+              </div>
+              <div className="flex flex-col gap-2">
+                {(debtors as Array<{ participant: Participant; amount: number; publicShare?: number; personalShare?: number }>)
+                  .filter((debtor) => 
+                    typeof debtor.publicShare === 'number' && typeof debtor.personalShare === 'number'
+                  )
+                  .map((debtor) => {
+                    const publicShare = typeof debtor.publicShare === 'number' ? debtor.publicShare : 0;
+                    const personalShare = typeof debtor.personalShare === 'number' ? debtor.personalShare : 0;
+                    return (
+                      <div
+                        key={`detail-${debtor.participant.id}`}
+                        className="w-full flex items-center justify-between gap-3 bg-white px-3 py-2 rounded-full shadow-sm border border-gray-100"
+                      >
+                        <span className="text-xs font-semibold text-text-main truncate">
+                          {debtor.participant.name}
+                        </span>
+                        <span className="text-[11px] text-text-muted whitespace-nowrap">
+                          Public Share {publicShare.toFixed(0)} + Personal {personalShare.toFixed(0)}
+                        </span>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
         <div 
           onClick={(e) => {
