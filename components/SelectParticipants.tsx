@@ -135,7 +135,7 @@ export default function SelectParticipants({
             </h3>
             <div className="space-y-3">
               {participants
-                .filter((p) => p.id !== payerId)
+                .filter((p) => p.id !== payerId && p.id !== '__DEPOSIT__')
                 .map((participant) => {
                   const isSelected = localSelected.includes(participant.id);
                   return (

@@ -159,8 +159,51 @@ export default function EditTransactionPage() {
 
         if (txError || !transaction) {
           console.error('Error loading transaction:', txError)
-          router.back()
+          router.push('/')
           return
+        }
+
+        // Check if user has access to the ledger of this transaction
+        const transactionLedgerId = transaction.ledger_id
+        if (transactionLedgerId) {
+          // Check if user is a member of this ledger
+          const { data: ledgerMember, error: memberError } = await supabase
+            .from('ledger_members')
+            .select('role')
+            .eq('ledger_id', transactionLedgerId)
+            .eq('user_id', currentUser.id)
+            .limit(1)
+
+          // If not a ledger member, check account_book
+          if (memberError || !ledgerMember || ledgerMember.length === 0) {
+            const { data: book, error: bookError } = await supabase
+              .from('account_books')
+              .select('owner_id')
+              .eq('id', transactionLedgerId)
+              .limit(1)
+
+            if (!bookError && book && book.length > 0) {
+              if (book[0]?.owner_id !== currentUser.id) {
+                // Check book_members
+                const { data: bookMember, error: bookMemberError } = await supabase
+                  .from('book_members')
+                  .select('role')
+                  .eq('book_id', transactionLedgerId)
+                  .eq('user_id', currentUser.id)
+                  .limit(1)
+
+                if (bookMemberError || !bookMember || bookMember.length === 0) {
+                  // User doesn't have access to this ledger
+                  router.push('/')
+                  return
+                }
+              }
+            } else {
+              // User doesn't have access to this ledger
+              router.push('/')
+              return
+            }
+          }
         }
 
         setOriginalTransaction(transaction)
@@ -1330,6 +1373,24 @@ export default function EditTransactionPage() {
           details={error?.details}
         />
         <Loading fullScreen message="Loading..." />
+      </>
+    )
+  }
+
+  // Check if user has access to the ledger - redirect to home if not
+  // This check happens after loading is complete
+  if (!isLoadingRole && role === null && user && activeLedger) {
+    // User is logged in but doesn't have access to this ledger
+    router.push('/')
+    return (
+      <>
+        <ErrorToast
+          message={error?.message || ''}
+          isVisible={isErrorVisible}
+          onClose={clearError}
+          details={error?.details}
+        />
+        <Loading fullScreen message="Redirecting..." />
       </>
     )
   }

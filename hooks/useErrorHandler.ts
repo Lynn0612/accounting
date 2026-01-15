@@ -16,7 +16,7 @@ export function useErrorHandler() {
 
     if (error instanceof Error) {
       errorInfo = {
-        message: customMessage || error.message || '發生未知錯誤',
+        message: customMessage || error.message || 'unknown error',
         code: (error as any).code,
         details: error.stack,
         timestamp: new Date(),
@@ -24,14 +24,14 @@ export function useErrorHandler() {
     } else if (typeof error === 'object' && error !== null) {
       const err = error as any
       errorInfo = {
-        message: customMessage || err.message || err.error?.message || '發生未知錯誤',
+        message: customMessage || err.message || err.error?.message || 'unknown error',
         code: err.code || err.error?.code,
         details: err.details || err.hint || err.error?.details || err.error?.hint,
         timestamp: new Date(),
       }
     } else {
       errorInfo = {
-        message: customMessage || String(error) || '發生未知錯誤',
+        message: customMessage || String(error) || 'unknown error',
         timestamp: new Date(),
       }
     }

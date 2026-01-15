@@ -162,6 +162,68 @@ export default function AddTransactionPage() {
     }
   }, [activeLedger, ledgers, currentUser, isLoadingUserFromHook, searchParams, setActiveLedger]);
 
+  // Check if user has access to ledger from URL parameters and redirect if not
+  useEffect(() => {
+    if (isLoadingUserFromHook || !currentUser) {
+      return;
+    }
+
+    const ledgerIdFromUrl = searchParams.get('ledger_id');
+    const bookIdFromUrl = searchParams.get('book_id');
+    const roleFromUrl = searchParams.get('role');
+    
+    // If URL has ledger/book parameters, verify user has access
+    if (ledgerIdFromUrl || bookIdFromUrl) {
+      const targetLedgerId = ledgerIdFromUrl || bookIdFromUrl;
+      const targetLedgerType = ledgerIdFromUrl ? 'ledger' : 'account_book';
+      
+      // Check if user has access to this ledger
+      const checkAccess = async () => {
+        let hasAccess = false;
+        
+        if (targetLedgerType === 'ledger') {
+          const { data, error } = await supabase
+            .from('ledger_members')
+            .select('role')
+            .eq('ledger_id', targetLedgerId)
+            .eq('user_id', currentUser.id)
+            .limit(1);
+          
+          hasAccess = !error && data && data.length > 0;
+        } else {
+          // Check account_book
+          const { data: book, error: bookError } = await supabase
+            .from('account_books')
+            .select('owner_id')
+            .eq('id', targetLedgerId)
+            .limit(1);
+          
+          if (!bookError && book && book.length > 0) {
+            if (book[0]?.owner_id === currentUser.id) {
+              hasAccess = true;
+            } else {
+              const { data, error } = await supabase
+                .from('book_members')
+                .select('role')
+                .eq('book_id', targetLedgerId)
+                .eq('user_id', currentUser.id)
+                .limit(1);
+              
+              hasAccess = !error && data && data.length > 0;
+            }
+          }
+        }
+        
+        // If user doesn't have access, redirect to home
+        if (!hasAccess) {
+          router.push('/');
+        }
+      };
+      
+      checkAccess();
+    }
+  }, [currentUser, isLoadingUserFromHook, searchParams, router, supabase]);
+
   // Redirect to URL with parameters if activeLedger exists but URL has no parameters
   useEffect(() => {
     if (isLoadingUserFromHook || !currentUser || !activeLedger || isLoadingRole) {
@@ -353,6 +415,13 @@ export default function AddTransactionPage() {
       setIsPublicExpense(false)
     }
   }, [isMultiMemberLedger, isPublicExpense])
+
+  // Manual scroll to top on mount to avoid Next.js auto-scroll warnings
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+    }
+  }, [])
 
   // Update public amount when amount changes
   // - Default behavior (no custom split amounts): Total ÷ member count
@@ -1221,8 +1290,18 @@ export default function AddTransactionPage() {
     return <Loading fullScreen message="Loading..." />;
   }
 
-  // Check role from URL parameter - if Viewer, show permission denied UI
+  // Check if user is logged in - redirect to login if not
+  if (!userFromHook && !isLoadingUserFromHook) {
+    router.push('/login');
+    return <Loading fullScreen message="Redirecting to login..." />;
+  }
+
+  // Check if user has access to the ledger - redirect to home if not
   const roleFromUrl = searchParams.get('role') as 'Owner' | 'Member' | 'Viewer' | null;
+  const ledgerIdFromUrl = searchParams.get('ledger_id');
+  const bookIdFromUrl = searchParams.get('book_id');
+
+  // Check role from URL parameter - if Viewer, show permission denied UI
   if (roleFromUrl === 'Viewer') {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background-light">
@@ -1256,7 +1335,7 @@ export default function AddTransactionPage() {
         onClose={clearError}
         details={error?.details}
       />
-    <div className="fixed inset-0 overflow-hidden bg-background-light">
+    <div className="fixed inset-0 overflow-hidden bg-background-light" data-nextjs-scroll-focus-boundary>
       <div className="relative flex h-full w-full flex-col max-w-md mx-auto bg-background-light shadow-2xl overflow-hidden">
       <div className="flex flex-col px-6 pt-8 pb-2 shrink-0 z-20">
         <div className="flex items-center justify-between mb-3">

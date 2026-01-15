@@ -41,17 +41,17 @@ export default function LoginPage() {
       });
       
       if (error) {
-        console.error('Debug Login Error:', error.message);
-        setAlertMessage('Debug Login Failed, please confirm that the Supabase account has been created');
+        console.error('Guest Login Error:', error.message);
+        setAlertMessage('Guest Login Failed, please confirm that the Supabase account has been created');
         setShowAlertModal(true);
       } else {
-        console.log('Debug Login Successful:', data.user.id);
+        console.log('Guest Login Successful:', data.user.id);
         // 登入成功後執行與 LINE 登入相同的跳轉邏輯
         window.location.replace('/');
       }
     } catch (err) {
-      console.error('Debug Login Exception:', err);
-      setAlertMessage('Debug Login Error');
+      console.error('Guest Login Exception:', err);
+      setAlertMessage('Guest Login Error');
       setShowAlertModal(true);
     } finally {
       setIsDebugLoading(false);
@@ -73,16 +73,34 @@ export default function LoginPage() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        console.error('Debug Login2 Error:', error.message);
-        setAlertMessage('Debug Login2 Failed, please confirm that the Supabase account has been created');
+        console.error('Guest Login2 Error:', error.message);
+        setAlertMessage('Guest Login2 Failed, please confirm that the Supabase account has been created');
         setShowAlertModal(true);
       } else {
-        console.log('Debug Login2 Successful:', data.user.id);
+        console.log('Guest Login2 Successful:', data.user.id);
+        
+        // Update profile full_name to "2 Test" for Guest Login 2
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: data.user.id,
+            full_name: '2 Test',
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'id',
+          });
+
+        if (profileError) {
+          console.error('Failed to update profile:', profileError);
+        } else {
+          console.log('Profile updated to "2 Test"');
+        }
+        
         window.location.replace('/');
       }
     } catch (err) {
-      console.error('Debug Login2 Exception:', err);
-      setAlertMessage('Debug Login2 Error');
+      console.error('Guest Login2 Exception:', err);
+      setAlertMessage('Guest Login2 Error');
       setShowAlertModal(true);
     } finally {
       setIsDebugLoading(false);
@@ -141,14 +159,14 @@ export default function LoginPage() {
                   disabled={isDebugLoading}
                   className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isDebugLoading ? 'Logging in...' : 'Debug Login (Test Account 1)'}
+                  {isDebugLoading ? 'Logging in...' : 'Guest Login (Test Account 1)'}
                 </button>
                 <button
                   onClick={handleDebugLogin2}
                   disabled={isDebugLoading}
                   className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isDebugLoading ? 'Logging in...' : 'Debug Login (Test Account 2)'}
+                  {isDebugLoading ? 'Logging in...' : 'Guest Login (Test Account 2)'}
                 </button>
               </div>
             )}

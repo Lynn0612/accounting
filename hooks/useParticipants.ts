@@ -70,17 +70,21 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
       isPayer: true,
     })
 
-    // Add other members
+    // Add other members (filter out Unknown and 3 test, only show 2 Test)
     userIds.forEach((userId) => {
       if (userId !== currentUserId) {
         const profile = profileMap.get(userId)
         if (profile) {
-          membersList.push({
-            id: userId,
-            name: profile.full_name || 'Unknown',
-            avatar: profile.avatar_url || undefined,
-            isPayer: false,
-          })
+          const fullName = profile.full_name || 'Unknown'
+          // Filter: only show "2 Test", exclude "Unknown" and "3 test"
+          if (fullName === '2 Test' || (fullName !== 'Unknown' && fullName !== '3 test' && fullName !== '3 Test')) {
+            membersList.push({
+              id: userId,
+              name: fullName,
+              avatar: profile.avatar_url || undefined,
+              isPayer: false,
+            })
+          }
         }
       }
     })
@@ -127,17 +131,21 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
       isPayer: true,
     })
 
-    // Add other members
+    // Add other members (filter out Unknown and 3 test, only show 2 Test)
     userIds.forEach((userId) => {
       if (userId !== currentUserId) {
         const profile = profileMap.get(userId)
         if (profile) {
-          membersList.push({
-            id: userId,
-            name: profile.full_name || 'Unknown',
-            avatar: profile.avatar_url || undefined,
-            isPayer: false,
-          })
+          const fullName = profile.full_name || 'Unknown'
+          // Filter: only show "2 Test", exclude "Unknown" and "3 test"
+          if (fullName === '2 Test' || (fullName !== 'Unknown' && fullName !== '3 test' && fullName !== '3 Test')) {
+            membersList.push({
+              id: userId,
+              name: fullName,
+              avatar: profile.avatar_url || undefined,
+              isPayer: false,
+            })
+          }
         }
       }
     })
