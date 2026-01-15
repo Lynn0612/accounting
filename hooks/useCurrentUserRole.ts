@@ -7,58 +7,50 @@ export type UserRole = 'Owner' | 'Member' | 'Viewer' | null
 
 const getUserRole = async (ledgerId: string | null, ledgerType: 'ledger' | 'account_book' | undefined, userId: string | null): Promise<UserRole> => {
   if (!ledgerId || !userId) {
-    console.log('[getUserRole] Missing params:', { ledgerId, ledgerType, userId })
     return null
   }
 
   const supabase = createClient()
 
   if (ledgerType === 'ledger') {
-    console.log('[getUserRole] Querying ledger_members:', { ledgerId, userId })
+    // Use regular query instead of .single() to avoid 406 errors when RLS blocks access
     const { data, error } = await supabase
       .from('ledger_members')
       .select('role')
       .eq('ledger_id', ledgerId)
       .eq('user_id', userId)
-      .single()
+      .limit(1)
 
-    console.log('[getUserRole] Query result:', { data, error, role: data?.role })
-    if (error || !data) {
-      console.log('[getUserRole] No role found or error:', error)
+    if (error || !data || data.length === 0) {
       return null
     }
-    console.log('[getUserRole] Returning role:', data.role)
-    return data.role as UserRole
+    return data[0]?.role as UserRole
   } else {
     // For account_books, check if user is owner or member
-    // First check if owner
-    const { data: book, error: bookError } = await supabase
+    // First check if owner - use regular query instead of .single()
+    const { data: books, error: bookError } = await supabase
       .from('account_books')
       .select('owner_id')
       .eq('id', ledgerId)
-      .single()
+      .limit(1)
 
-    if (bookError) {
-      console.log('[getUserRole] Error checking account_book owner:', bookError)
-    } else if (book?.owner_id === userId) {
+    if (!bookError && books && books.length > 0 && books[0]?.owner_id === userId) {
       return 'Owner'
     }
 
     // Then check book_members - ensure correct column names
-    console.log('[getUserRole] Querying book_members:', { book_id: ledgerId, user_id: userId })
+    // Use regular query instead of .single()
     const { data, error } = await supabase
       .from('book_members')
       .select('role')
       .eq('book_id', ledgerId)
       .eq('user_id', userId)
-      .single()
+      .limit(1)
 
-    console.log('[getUserRole] book_members query result:', { data, error, role: data?.role })
-    if (error || !data) {
-      console.log('[getUserRole] No role found in book_members or error:', error)
+    if (error || !data || data.length === 0) {
       return null
     }
-    return data.role as UserRole
+    return data[0]?.role as UserRole
   }
 }
 
@@ -68,42 +60,21 @@ export function useCurrentUserRole() {
 
   // Wait for user session to be loaded before running query
   const enabled = !!activeLedger?.id && !!user?.id && !isLoadingUser
-  
-  console.log('[useCurrentUserRole] Hook called:', {
-    activeLedgerId: activeLedger?.id,
-    activeLedgerType: activeLedger?.type,
-    userId: user?.id,
-    isLoadingUser,
-    enabled,
-  })
 
   const query = useQuery({
     queryKey: ['currentUserRole', activeLedger?.id, activeLedger?.type, user?.id],
-    queryFn: () => {
-      console.log('[useCurrentUserRole] Query function called')
-      return getUserRole(activeLedger?.id || null, activeLedger?.type, user?.id || null)
-    },
+    queryFn: () => getUserRole(activeLedger?.id || null, activeLedger?.type, user?.id || null),
     enabled,
-    staleTime: 0, // Always refetch to get latest role
-    gcTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000, // 2 minutes - 減少過度重新獲取
+    gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 2,
-    refetchOnMount: true, // Always refetch when component mounts
-    refetchOnWindowFocus: true, // Refetch when window regains focus
+    refetchOnMount: false, // 使用 staleTime 控制，不需要每次 mount 都重新獲取
+    refetchOnWindowFocus: false, // 使用 staleTime 控制，不需要每次 focus 都重新獲取
   })
 
   const role = query.data
   const isViewer = role === 'Viewer'
   const canEdit = role !== 'Viewer' && role !== null
-
-  console.log('[useCurrentUserRole] Query result:', {
-    data: query.data,
-    role,
-    isViewer,
-    canEdit,
-    isLoading: query.isLoading,
-    error: query.error,
-    isEnabled: enabled,
-  })
 
   return {
     ...query,

@@ -24,42 +24,49 @@ const ACTIVE_LEDGER_TYPE_KEY = 'activeLedgerType';
 
 // Helper function to get user role (moved outside to avoid circular dependency)
 const getUserRole = async (ledgerId: string | null, ledgerType: 'ledger' | 'account_book' | undefined, userId: string | null): Promise<'Owner' | 'Member' | 'Viewer' | null> => {
-  if (!ledgerId || !userId) return null
+  if (!ledgerId || !userId) {
+    return null
+  }
 
   const supabase = createClient()
 
   if (ledgerType === 'ledger') {
+    // Use regular query instead of .single() to avoid 406 errors when RLS blocks access
     const { data, error } = await supabase
       .from('ledger_members')
       .select('role')
       .eq('ledger_id', ledgerId)
       .eq('user_id', userId)
-      .single()
+      .limit(1)
 
-    if (error || !data) return null
-    return data.role as 'Owner' | 'Member' | 'Viewer' | null
+    if (error || !data || data.length === 0) {
+      return null
+    }
+    return data[0]?.role as 'Owner' | 'Member' | 'Viewer' | null
   } else {
     // For account_books, check if user is owner or member
-    const { data: book } = await supabase
+    // Use regular query instead of .single()
+    const { data: books, error: bookError } = await supabase
       .from('account_books')
       .select('owner_id')
       .eq('id', ledgerId)
-      .single()
+      .limit(1)
 
-    if (book?.owner_id === userId) {
+    if (!bookError && books && books.length > 0 && books[0]?.owner_id === userId) {
       return 'Owner'
     }
 
-    // Then check book_members
     const { data, error } = await supabase
       .from('book_members')
       .select('role')
       .eq('book_id', ledgerId)
       .eq('user_id', userId)
-      .single()
+      .limit(1)
 
-    if (error || !data) return null
-    return data.role as 'Owner' | 'Member' | 'Viewer' | null
+    if (error || !data || data.length === 0) {
+      return null
+    }
+    return data[0]?.role as 'Owner' | 'Member' | 'Viewer' | null
   }
 }
 
@@ -77,9 +84,11 @@ export function LedgerProvider({ children, initialLedgers = [] }: { children: Re
     queryKey: ['currentUserRole', activeLedger?.id, activeLedger?.type, user?.id],
     queryFn: () => getUserRole(activeLedger?.id || null, activeLedger?.type, user?.id || null),
     enabled: !!activeLedger?.id && !!user?.id,
-    staleTime: 1 * 60 * 1000, // 1 minute
+    staleTime: 2 * 60 * 1000, // 2 minutes - 與 useCurrentUserRole 保持一致，減少過度重新獲取
     gcTime: 5 * 60 * 1000, // 5 minutes
     retry: 2,
+    refetchOnMount: false, // 使用 staleTime 控制，不需要每次 mount 都重新獲取
+    refetchOnWindowFocus: false, // 使用 staleTime 控制，不需要每次 focus 都重新獲取
   });
   
   const isViewer = userRole === 'Viewer';

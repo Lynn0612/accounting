@@ -47,7 +47,7 @@ export async function GET(request: Request) {
     const feeds = RSS_FEEDS
     const allNews: NewsItem[] = []
 
-    const feedPromises = feeds.map(async (feedUrl) => {
+    const feedPromises = feeds.map(async (feedUrl, feedIndex: number) => {
       try {
         const response = await fetch(feedUrl, {
           headers: {
@@ -67,11 +67,15 @@ export async function GET(request: Request) {
           const channel = result?.rss?.channel?.[0]
           const source = channel?.title?.[0] || 'Yahoo Finance'
 
-          return items.map((item: any, index: number) => {
+          return items.map((item: any, localIndex: number) => {
+            // Use feedIndex and localIndex to create a unique index for fallback dates
+            // This ensures each item from different feeds has a different time
+            const index = feedIndex * 100 + localIndex
             const title = item.title?.[0] || ''
             const link = item.link?.[0] || ''
             
             let pubDate = ''
+            let originalDateStr = ''
             
             const pubDateFields = [
               item.pubDate,
@@ -83,31 +87,89 @@ export async function GET(request: Request) {
             
             for (const field of pubDateFields) {
               if (Array.isArray(field) && field[0]) {
-                pubDate = String(field[0]).trim()
+                originalDateStr = String(field[0]).trim()
+                pubDate = originalDateStr
                 break
               } else if (field && typeof field === 'string') {
-                pubDate = field.trim()
+                originalDateStr = field.trim()
+                pubDate = originalDateStr
                 break
               }
             }
             
             if (pubDate) {
               try {
-                const parsedDate = new Date(pubDate)
+                // Clean up the date string first
+                let cleanedDateStr = pubDate.trim()
+                
+                // Log original date string for debugging (first 3 items only)
+                if (index < 3) {
+                  console.log('Parsing date for item', index, ':', cleanedDateStr, 'from feed:', feedUrl)
+                }
+                
+                // JavaScript's Date constructor can parse RFC 2822 format directly
+                // Format: "Mon, 01 Jan 2024 12:00:00 +0800" or "Mon, 01 Jan 2024 12:00:00 GMT"
+                let parsedDate = new Date(cleanedDateStr)
+                
+                // If parsing fails, try to fix common issues
                 if (isNaN(parsedDate.getTime())) {
+                  // Try removing timezone and adding it back
+                  // Some RSS feeds have malformed timezone strings
+                  const withoutTz = cleanedDateStr.replace(/\s*[+-]\d{4}$/, '').replace(/\s*GMT$/, '')
+                  parsedDate = new Date(withoutTz + ' GMT')
+                }
+                
+                // If still invalid, try ISO 8601 format
+                if (isNaN(parsedDate.getTime())) {
+                  // Try ISO format: "2024-01-01T12:00:00+08:00" or "2024-01-01T12:00:00Z"
+                  parsedDate = new Date(cleanedDateStr.replace(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}:\d{2})/, '$1T$2'))
+                }
+                
+                if (isNaN(parsedDate.getTime())) {
+                  // Log the original date string for debugging
+                  console.warn('Could not parse date:', cleanedDateStr, 'from feed:', feedUrl)
                   pubDate = ''
                 } else {
+                  // Check if the parsed date is too old (more than 7 days) or in the future
+                  // This might indicate a parsing error
+                  const now = new Date()
+                  const daysDiff = Math.abs((now.getTime() - parsedDate.getTime()) / (1000 * 60 * 60 * 24))
+                  
+                  // If the date is more than 7 days old or in the future by more than 1 day, it might be wrong
+                  if (daysDiff > 7 || (parsedDate.getTime() > now.getTime() && daysDiff > 1)) {
+                    console.warn('Suspicious date parsed:', cleanedDateStr, '->', parsedDate.toISOString(), 'days diff:', daysDiff)
+                    // Don't reject it, but log it for debugging
+                  }
+                  
+                  // Convert to ISO string
+                  // The Date object already handles timezone conversion correctly
                   pubDate = parsedDate.toISOString()
+                  
+                  // Log successful parsing for first 3 items
+                  if (index < 3) {
+                    console.log('Successfully parsed date for item', index, ':', cleanedDateStr, '->', pubDate)
+                  }
                 }
               } catch (e) {
+                console.error('Error parsing date:', pubDate, e)
                 pubDate = ''
               }
             }
             
             if (!pubDate) {
+              // Use a more realistic fallback: subtract hours and minutes
+              // Make sure each item has a different time to avoid all showing the same time
               const fallbackDate = new Date()
-              fallbackDate.setMinutes(fallbackDate.getMinutes() - index)
+              // Subtract hours based on index, and add some minutes variation
+              // Use a more varied pattern to ensure each item is different
+              const hoursAgo = Math.min(index + 1, 24) // Cap at 24 hours
+              const minutesAgo = (index * 13) % 60 // Use prime number for better distribution
+              fallbackDate.setHours(fallbackDate.getHours() - hoursAgo)
+              fallbackDate.setMinutes(fallbackDate.getMinutes() - minutesAgo)
+              fallbackDate.setSeconds(0) // Reset seconds for consistency
               pubDate = fallbackDate.toISOString()
+              // Always log fallback usage to help debug
+              console.log('Using fallback date for item', index, ':', pubDate, 'Hours ago:', hoursAgo, 'Minutes ago:', minutesAgo, 'Original was:', originalDateStr || 'empty')
             }
             
             const description = item.description?.[0] || item['content:encoded']?.[0] || ''
@@ -170,7 +232,20 @@ export async function GET(request: Request) {
       return new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()
     })
 
-    return NextResponse.json({ items: allNews.slice(0, 20) })
+    // 添加積極的響應緩存標頭
+    // s-maxage: CDN 緩存時間（5分鐘）
+    // stale-while-revalidate: 允許在重新驗證時使用過期緩存（10分鐘）
+    // 這樣即使緩存過期，用戶仍能看到內容，同時在背景更新
+    return NextResponse.json(
+      { items: allNews.slice(0, 20) },
+      {
+        headers: {
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+          'CDN-Cache-Control': 'public, s-maxage=300',
+          'Vercel-CDN-Cache-Control': 'public, s-maxage=300',
+        }
+      }
+    )
   } catch (error) {
     console.error('Error in news API:', error)
     

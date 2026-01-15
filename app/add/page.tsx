@@ -65,6 +65,7 @@ export default function AddTransactionPage() {
   const [publicShareParticipantIds, setPublicShareParticipantIds] = useState<string[]>([]);
   const [publicAmount, setPublicAmount] = useState<string>('');
   const [publicAmountManuallySet, setPublicAmountManuallySet] = useState(false);
+  const [shouldResetAmount, setShouldResetAmount] = useState(false);
   const [showPublicShareModal, setShowPublicShareModal] = useState(false);
   const [payerId, setPayerId] = useState<string>('');
   const [depositManagerId, setDepositManagerId] = useState<string>('');
@@ -267,6 +268,14 @@ export default function AddTransactionPage() {
 
   const handleKeypadInput = useCallback((value: string) => {
     setAmount((prev) => {
+      if (shouldResetAmount && !["+", "-", "×", "÷"].includes(value)) {
+        setShouldResetAmount(false);
+        if (value === ".") {
+          return "0.";
+        }
+        return value;
+      }
+      
       if (prev === "0" && value !== "." && !["+", "-", "×", "÷"].includes(value)) {
         return value;
       }
@@ -288,7 +297,7 @@ export default function AddTransactionPage() {
       }
       return prev + value;
     });
-  }, []);
+  }, [shouldResetAmount]);
 
   const handleClear = useCallback(() => {
     setAmount("0");
@@ -827,7 +836,12 @@ export default function AddTransactionPage() {
 
           const { error: splitError } = await supabase.from("transaction_splits").insert(splitRecords);
           if (splitError) {
-            handleError(splitError, '保存分攤失敗');
+            // 如果 splits 創建失敗，刪除已創建的 transaction 以保持數據一致性
+            await supabase
+              .from("transactions")
+              .delete()
+              .eq('id', transaction.id);
+            handleError(splitError, '保存分攤失敗，已取消交易');
             setSaving(false);
             return;
           }
@@ -878,8 +892,14 @@ export default function AddTransactionPage() {
           });
 
         if (splitError) {
-          handleError(splitError, '保存分攤失敗');
-          // Don't return, transaction is already created
+          // 如果 split 創建失敗，刪除已創建的 transaction 以保持數據一致性
+          await supabase
+            .from("transactions")
+            .delete()
+            .eq('id', transaction.id);
+          handleError(splitError, '保存分攤失敗，已取消交易');
+          setSaving(false);
+          return;
         }
 
         await refreshLedgers();
@@ -961,9 +981,8 @@ export default function AddTransactionPage() {
         // Public Share ($P): Split among public share participants
         // Default: if none selected, ALL members share (even if not split-with/payer)
         // If selected: ONLY selected participants share (do NOT force-include payer)
-        const defaultPublicShareIds = participants.map((p) => p.id);
         const basePublicShareIds =
-          publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds;
+          publicShareParticipantIds.length > 0 ? publicShareParticipantIds : participants.map((p) => p.id);
         const publicShareParticipants = [...new Set(basePublicShareIds)];
         const publicShareCount = publicShareParticipants.length;
         
@@ -986,28 +1005,26 @@ export default function AddTransactionPage() {
         }
         
         // Calculate each participant's debt
-        // Debtors should include:
-        // 1. All users (selected participants) - they pay personal share + public share
-        // 2. All public share participants (who are not users) - they only pay public share
-        const allDebtorIds = [...new Set([...effectiveSplitWithIds, ...basePublicShareIds])]
-          .filter((id) => id !== payerId);
+        // Debtors should include EVERYONE who has either a personal share or a public share
+        const allPotentialDebtorIds = [...new Set([...effectiveSplitWithIds, ...basePublicShareIds])];
         
-        allDebtorIds.forEach((participantId) => {
+        allPotentialDebtorIds.forEach((participantId) => {
           // Check if this participant is in public share participants
           const isInPublicShare = publicShareParticipants.includes(participantId);
-          // Public share: only if in public share participants
           const publicShare = isInPublicShare ? publicSharePerPerson : 0;
           
-          // Personal share: only users share (if this participant is a user)
+          // Personal share: only users share (if this participant is in effectiveSplitWithIds)
           const isPersonalShare = personalShareParticipants.includes(participantId);
           const personalShare = isPersonalShare ? (personalShares.amounts[participantId] || 0) : 0;
           
           const totalDebt = Math.ceil(publicShare + personalShare);
           
+          if (totalDebt > 0) {
           splits.push({
             user_id: participantId,
             amount: totalDebt,
           });
+          }
         });
       } else {
         const custom = computeCustomSplits(totalInt, effectiveSplitWithIds);
@@ -1100,14 +1117,22 @@ export default function AddTransactionPage() {
 
       console.log('Creating transaction splits:', splitRecords);
 
-      const { error: splitError } = await supabase
-        .from("transaction_splits")
-        .insert(splitRecords);
+      // 只有在有 splits 時才插入，如果 splits 為空（例如只有付款人沒有分攤對象），transaction 仍然有效
+      if (splitRecords.length > 0) {
+        const { error: splitError } = await supabase
+          .from("transaction_splits")
+          .insert(splitRecords);
 
-      if (splitError) {
-        handleError(splitError, '保存分攤失敗');
-        setSaving(false);
-        return;
+        if (splitError) {
+          // 如果 splits 創建失敗，刪除已創建的 transaction 以保持數據一致性
+          await supabase
+            .from("transactions")
+            .delete()
+            .eq('id', transaction.id);
+          handleError(splitError, '保存分攤失敗，已取消交易');
+          setSaving(false);
+          return;
+        }
       }
 
       // Success: Refresh ledgers and navigate back
@@ -1280,6 +1305,7 @@ export default function AddTransactionPage() {
             <h1
               onClick={(e) => {
                 e.stopPropagation();
+                setShouldResetAmount(true);
                 setShowKeypad(true);
               }}
               className={`tracking-tighter font-extrabold flex items-start justify-center gap-1 cursor-pointer w-full text-center break-all whitespace-pre-wrap ${
@@ -1295,7 +1321,7 @@ export default function AddTransactionPage() {
         </div>
 
         {/* Payer and Debtors - match /edit UI */}
-        {transactionType === "expense" && splitSummary && splitSummary.debtors.length > 0 && (
+        {transactionType === "expense" && splitSummary && splitSummary.debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
           <div className="mt-6 mb-8 flex items-center justify-center gap-4 text-sm font-medium px-6 w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex flex-col items-center gap-1">
               <span className="text-text-muted text-xs">付款人 Payer</span>
@@ -1337,7 +1363,7 @@ export default function AddTransactionPage() {
         )}
 
         {/* More detailed breakdown for shared expense (keep spacing tidy, style aligned with /edit chips) */}
-        {transactionType === "expense" && splitSummary && isPublicExpense && splitSummary.debtors.length > 0 && (
+        {transactionType === "expense" && splitSummary && isPublicExpense && splitSummary.debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
           <div className="px-6 w-full mt-4 mb-6" onClick={(e) => e.stopPropagation()}>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
@@ -1553,7 +1579,7 @@ export default function AddTransactionPage() {
                     setShowPayerModal(true);
                   }, 100);
                 }}
-                className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
+                className={`flex items-center justify-between ${payerId !== DEPOSIT_PAYER_ID ? 'mb-5 border-b border-gray-100 pb-5' : ''} cursor-pointer`}
               >
                 <span className="text-sm font-bold text-[#657486] tracking-wide">
                   Payer
@@ -1578,6 +1604,8 @@ export default function AddTransactionPage() {
                 </div>
               </div>
 
+              {payerId !== DEPOSIT_PAYER_ID && (
+                <>
               <div
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1720,24 +1748,43 @@ export default function AddTransactionPage() {
                 Shared expense Amount ($)
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={publicAmount}
                   onChange={(e) => {
                     const next = e.target.value;
                     const total = Math.ceil(parseFloat(amount) || 0);
                     if (next === "") {
-                      setPublicAmount("0");
+                      setPublicAmount("");
                     } else {
                       const n = parseFloat(next);
                       if (isNaN(n)) {
-                        setPublicAmount(next);
+                        if (/^[0-9]*\.?[0-9]*$/.test(next)) {
+                          setPublicAmount(next);
+                        }
                       } else if (total > 0) {
-                        setPublicAmount(Math.min(Math.ceil(n), total).toString());
+                        setPublicAmount(next);
                       } else {
                         setPublicAmount(next);
                       }
                     }
                     setPublicAmountManuallySet(true);
+                  }}
+                  onBlur={(e) => {
+                    const val = e.target.value;
+                    if (val === "") {
+                      setPublicAmount("0");
+                    } else {
+                      const n = parseFloat(val);
+                      if (!isNaN(n)) {
+                        const total = Math.ceil(parseFloat(amount) || 0);
+                        if (total > 0) {
+                          setPublicAmount(Math.min(Math.ceil(n), total).toString());
+                        } else {
+                          setPublicAmount(Math.ceil(n).toString());
+                        }
+                      }
+                    }
                   }}
                   placeholder="Auto-calculated"
                   className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
@@ -1798,6 +1845,8 @@ export default function AddTransactionPage() {
                   </div>
                 </div>
               </div>
+                  )}
+                </>
             )}
           </div>
         </div>

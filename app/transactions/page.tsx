@@ -3,17 +3,17 @@
 import { useState, useMemo, useCallback, memo } from 'react'
 import { X } from 'lucide-react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import DateRangePicker from '@/components/DateRangePicker'
 import { useLedger } from '@/contexts/LedgerContext'
 import { useTransactions } from '@/hooks/useTransactions'
+import { useSettlements } from '@/hooks/useSettlements'
 import { useUser } from '@/hooks/useUser'
 import { useParticipants } from '@/hooks/useParticipants'
 import TransactionCard from '@/components/TransactionCard'
 import TransactionCardSkeleton from '@/components/TransactionCardSkeleton'
 import { formatRelativeDate, formatDateRange } from '@/utils/date'
 import { formatTransactionAmount } from '@/utils/formatAmount'
-import { useQuery } from '@tanstack/react-query'
-import { createClient } from '@/lib/supabase/client'
 
 interface Transaction {
   id: string
@@ -28,6 +28,7 @@ interface Transaction {
 }
 
 export default function TransactionsPage() {
+  const pathname = usePathname()
   const { activeLedger } = useLedger()
   const { data: user } = useUser()
   const { data: participants = [] } = useParticipants(activeLedger?.id || null)
@@ -53,32 +54,12 @@ export default function TransactionsPage() {
   })
 
   const endDateTimeStr = useMemo(() => `${endDateStr}T23:59:59.999Z`, [endDateStr])
-  const { data: settlementsData = [] } = useQuery({
-    queryKey: ['settlements', activeLedger?.id, startDateStr, endDateStr],
+  const { data: settlementsData = [] } = useSettlements({
+    ledgerId: activeLedger?.id || null,
+    ledgerType: activeLedger?.type as 'ledger' | 'account_book' | undefined,
+    startDate: startDateStr,
+    endDate: endDateTimeStr,
     enabled: !!activeLedger?.id,
-    queryFn: async () => {
-      const ledgerId = activeLedger!.id
-      const { data, error } = await supabase
-        .from('settlements')
-        .select('id, sender_id, receiver_id, amount, created_at, date, note')
-        .eq('ledger_id', ledgerId)
-        .gte('created_at', startDateStr)
-        .lte('created_at', endDateTimeStr)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        const fallback = await supabase
-          .from('settlements')
-          .select('id, sender_id, receiver_id, amount')
-          .eq('ledger_id', ledgerId)
-        if (fallback.error) return []
-        return fallback.data || []
-      }
-
-      return data || []
-    },
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
   })
 
   // Memoize icon background mapping
@@ -108,29 +89,35 @@ export default function TransactionsPage() {
         // For income transactions, don't show payer text (keep it blank)
         let payerText = ''
         if (tx.type !== 'income') {
+          if (tx.expense_payment_source === 'deposit' || tx.income_mode === 'deposit') {
+            payerText = '儲值金'
+          } else {
           payerText = 'Shared'
           if (tx.payer_id === user.id) {
             payerText = 'You paid'
           } else if (payer) {
             payerText = `${payer.full_name || 'Unknown'} paid`
           }
+          }
+        } else if (tx.income_mode === 'deposit') {
+          payerText = '儲值金'
         }
 
       const categoryName = category?.name || 'Other'
       const displayTitle = tx.description?.trim() || categoryName
 
-      return {
-        id: tx.id,
+        return {
+          id: tx.id,
         name: displayTitle,
-        date: new Date(tx.date),
+          date: new Date(tx.date),
         createdAt: new Date(tx.created_at), // 新增 createdAt 用於排序
         category: categoryName,
-        amount: Number(tx.amount),
-        payer: payerText,
-        icon: categoryIcon,
-        iconBg: getIconBg(categoryIcon),
-        type: tx.type || 'expense',
-      }
+          amount: Number(tx.amount),
+          payer: payerText,
+          icon: categoryIcon,
+          iconBg: getIconBg(categoryIcon),
+          type: tx.type || 'expense',
+        }
       })
 
     const participantById = new Map((participants || []).map((p: any) => [p.id, p]))
@@ -143,7 +130,7 @@ export default function TransactionsPage() {
 
       const isIncoming = s.receiver_id === user.id
       const defaultTitle = 'Repayment' // 如果沒備註，預設顯示類別名稱
-      const payerText = isIncoming ? `${senderName} paid` : ''
+      const payerText = isIncoming ? `${senderName} paid` : `${receiverName} paid`
 
       return {
         id: `settlement-${s.id}`,
@@ -240,7 +227,7 @@ export default function TransactionsPage() {
   }, [])
 
   return (
-    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto">
+    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto pb-32">
       <header className="pt-8 pb-2 px-6 flex flex-col z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-4">
           <Link
@@ -353,6 +340,38 @@ export default function TransactionsPage() {
         initialStartDate={startDate}
         initialEndDate={endDate}
       />
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-3rem)] max-w-md h-16 bg-white rounded-full shadow-float flex items-center justify-around px-2 z-50">
+        <Link 
+          href="/" 
+          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
+        >
+          <span className={`material-symbols-outlined ${pathname === '/' ? 'filled' : ''}`} style={pathname === '/' ? { fontVariationSettings: "'FILL' 1" } : {}}>home</span>
+        </Link>
+        <Link 
+          href="/statistics" 
+          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/statistics' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
+        >
+          <span className={`material-symbols-outlined ${pathname === '/statistics' ? 'filled' : ''}`} style={pathname === '/statistics' ? { fontVariationSettings: "'FILL' 1" } : {}}>pie_chart</span>
+        </Link>
+        <div className="w-12"></div>
+        <Link 
+          href="/finance" 
+          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/finance' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
+        >
+          <span className={`material-symbols-outlined ${pathname === '/finance' ? 'filled' : ''}`} style={pathname === '/finance' ? { fontVariationSettings: "'FILL' 1" } : {}}>account_balance_wallet</span>
+        </Link>
+        <Link 
+          href="/settings" 
+          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/settings' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
+        >
+          <span className={`material-symbols-outlined ${pathname === '/settings' ? 'filled' : ''}`} style={pathname === '/settings' ? { fontVariationSettings: "'FILL' 1" } : {}}>settings</span>
+        </Link>
+        <div className="absolute -top-6 left-1/2 -translate-x-1/2">
+          <Link href="/add" className="w-14 h-14 bg-primary text-white rounded-full shadow-lg shadow-primary/40 flex items-center justify-center hover:scale-105 active:scale-95 transition-all">
+            <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>add</span>
+          </Link>
+        </div>
+      </nav>
     </div>
   )
 }

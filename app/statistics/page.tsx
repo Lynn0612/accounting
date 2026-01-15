@@ -282,7 +282,7 @@ export default function StatisticsPage() {
   const donutSegments = calculateDonutSegments()
 
   return (
-    <div className="flex-1 overflow-y-auto hide-scrollbar pb-32 relative w-full max-w-md mx-auto bg-background-light">
+    <div className="flex-1 overflow-y-auto hide-scrollbar pb-32 relative w-full max-w-md mx-auto bg-background-light min-h-screen">
       <header className="sticky top-0 z-20 bg-background-light/95 backdrop-blur-sm px-6 pt-12 pb-4 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="w-10 h-10"></div>
@@ -394,8 +394,8 @@ export default function StatisticsPage() {
                 </span>
               </div>
             </div>
-            <div className="w-full grid grid-cols-2 gap-3">
-              {categories.slice(0, 4).map((cat) => (
+            <div className="w-full grid grid-cols-3 gap-3">
+              {categories.map((cat) => (
                 <div key={cat.id} className="flex items-center gap-2 p-2 rounded-xl bg-gray-50/50">
                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }}></div>
                   <div className="flex flex-col">
@@ -588,7 +588,7 @@ export default function StatisticsPage() {
         </div>
       )}
 
-      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-3rem)] max-w-md h-16 bg-white rounded-full shadow-float flex items-center justify-around px-2 z-20">
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-3rem)] max-w-md h-16 bg-white rounded-full shadow-float flex items-center justify-around px-2 z-50">
         <Link
           href="/"
           className="flex flex-col items-center justify-center w-12 h-12 rounded-full text-gray-400 hover:text-primary hover:bg-gray-50 transition-colors"

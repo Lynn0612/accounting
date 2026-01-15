@@ -133,7 +133,6 @@ export function useLedgers() {
             filter: `user_id=eq.${user.id}`, // Only listen to changes affecting current user
           },
           (payload) => {
-            console.log('Ledger members change detected:', payload)
             // Invalidate and refetch ledgers when membership changes
             queryClient.invalidateQueries({ queryKey: ['ledgers'] })
           }
@@ -147,14 +146,11 @@ export function useLedgers() {
             filter: `user_id=eq.${user.id}`, // Only listen to changes affecting current user
           },
           (payload) => {
-            console.log('Book members change detected:', payload)
             // Invalidate and refetch ledgers when membership changes
             queryClient.invalidateQueries({ queryKey: ['ledgers'] })
           }
         )
-        .subscribe((status) => {
-          console.log('Realtime subscription status:', status)
-        })
+        .subscribe()
     }
 
     setupSubscription()

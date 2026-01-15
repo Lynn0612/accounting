@@ -43,18 +43,9 @@ async function getDashboardData() {
     redirect("/login");
   }
 
-  // Fetch ledgers the user belongs to
-  const { data: userLedgers, error: ledgersError } = await supabase
-    .from('ledgers')
-    .select('id, name, created_at')
-    .order('created_at', { ascending: false });
-
-  // Log error but don't fail - ledgers might not be set up yet
-  if (ledgersError) {
-    console.error('Error fetching ledgers:', ledgersError);
-  }
-
   // Get first ledger user is member of and fetch transactions in one query using join
+  // Note: We don't fetch all ledgers here because useLedgers hook in HomePageClient handles that
+  // Fetching all ledgers without proper filtering causes 406 errors due to RLS policies
   const { data: ledgerMembership } = await supabase
     .from('ledger_members')
     .select('ledger_id')
@@ -183,7 +174,7 @@ async function getDashboardData() {
     outstanding,
     recentTransactions,
     activeBookName: "Ledger",
-    ledgers: userLedgers || [],
+    ledgers: [], // Empty array - useLedgers hook in HomePageClient will fetch ledgers properly
   };
 }
 

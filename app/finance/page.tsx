@@ -122,6 +122,16 @@ export default function FinancePage() {
       if (response.ok) {
         const data = await response.json()
         setNews(data.items || [])
+        // Debug: log news items with dates (only in development)
+        if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          console.log('Loaded news items:', data.items?.slice(0, 3).map((item: NewsItem) => ({
+            title: item.title.substring(0, 30),
+            pubDate: item.pubDate,
+            parsed: new Date(item.pubDate).toLocaleString('zh-TW'),
+            now: new Date().toLocaleString('zh-TW'),
+            diffHours: Math.floor((new Date().getTime() - new Date(item.pubDate).getTime()) / (1000 * 60 * 60))
+          })))
+        }
       }
     } catch (error) {
       console.error('Error loading news:', error)
@@ -264,17 +274,31 @@ export default function FinancePage() {
     
     let date: Date
     try {
+      // Handle ISO string format (e.g., "2024-01-01T12:00:00.000Z")
       date = new Date(dateString)
+      
       if (isNaN(date.getTime())) {
+        // Try to parse as different format
+        console.warn('Invalid date string:', dateString)
         return dateString
       }
-    } catch {
+      
+      // Ensure we're working with a valid date
+      if (date.getTime() === 0) {
+        return dateString
+      }
+      
+      // Debug: log the parsed date to see what we're working with
+      // console.log('Parsed date:', dateString, '->', date.toISOString(), 'Local:', date.toLocaleString('zh-TW'))
+    } catch (e) {
+      console.error('Error parsing date:', dateString, e)
       return dateString
     }
     
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
     
+    // Handle future dates (shouldn't happen, but just in case)
     if (diffMs < 0) {
       return '剛剛'
     }
@@ -288,7 +312,11 @@ export default function FinancePage() {
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
 
     if (diffDays > 7) {
-      return date.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+      return date.toLocaleDateString('zh-TW', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined 
+      })
     } else if (diffDays > 0) {
       return `${diffDays}天前`
     } else if (diffHours > 0) {
@@ -549,7 +577,7 @@ export default function FinancePage() {
                       <span className="px-2 py-0.5 bg-background-light rounded-md text-[10px] font-bold text-text-secondary uppercase tracking-wider">
                         {item.source}
                       </span>
-                      <span className="text-xs text-text-secondary">• {formatRelativeTime(item.pubDate)}</span>
+                      {/* <span className="text-xs text-text-secondary">• {formatRelativeTime(item.pubDate)}</span> */}
                     </div>
                   </div>
                 </article>

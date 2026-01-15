@@ -13,6 +13,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useLedger } from '@/contexts/LedgerContext'
 import { useParticipants } from '@/hooks/useParticipants'
 import { useErrorHandler } from '@/hooks/useErrorHandler'
+import { useCurrentUserRole } from '@/hooks/useCurrentUserRole'
 import ErrorToast from '@/components/ErrorToast'
 import { formatSimpleDate } from '@/utils/date'
 import Loading from '@/components/Loading'
@@ -34,6 +35,7 @@ export default function EditTransactionPage() {
   const supabase = createClient()
   const queryClient = useQueryClient()
   const { activeLedger, refreshLedgers } = useLedger()
+  const { role, isViewer, isLoading: isLoadingRole } = useCurrentUserRole()
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -62,6 +64,7 @@ export default function EditTransactionPage() {
   const [incomeMode, setIncomeMode] = useState<'personal' | 'deposit' | 'bonus'>('personal')
   const [publicAmount, setPublicAmount] = useState<string>('')
   const [publicAmountManuallySet, setPublicAmountManuallySet] = useState(false)
+  const [shouldResetAmount, setShouldResetAmount] = useState(false)
   const [customSplitAmounts, setCustomSplitAmounts] = useState<Record<string, string>>({})
   const [showPublicShareModal, setShowPublicShareModal] = useState(false)
   const [repaymentParticipantIds, setRepaymentParticipantIds] = useState<string[]>([])
@@ -298,6 +301,14 @@ export default function EditTransactionPage() {
 
   const handleKeypadInput = useCallback((value: string) => {
     setAmount((prev) => {
+      if (shouldResetAmount && !["+", "-", "×", "÷"].includes(value)) {
+        setShouldResetAmount(false);
+        if (value === ".") {
+          return "0.";
+        }
+        return value;
+      }
+      
       if (prev === "0" && value !== "." && !["+", "-", "×", "÷"].includes(value)) {
         return value;
       }
@@ -319,7 +330,7 @@ export default function EditTransactionPage() {
       }
       return prev + value;
     });
-  }, []);
+  }, [shouldResetAmount]);
 
   const handleClear = useCallback(() => {
     setAmount("0");
@@ -731,7 +742,17 @@ export default function EditTransactionPage() {
               return
             }
 
-            await supabase.from('transaction_splits').delete().eq('transaction_id', transactionId)
+            // 先更新 transaction 成功後，再刪除舊 splits
+            const { error: deleteError } = await supabase
+              .from('transaction_splits')
+              .delete()
+              .eq('transaction_id', transactionId)
+
+            if (deleteError) {
+              handleError(deleteError, '刪除舊分攤失敗')
+              setSaving(false)
+              return
+            }
 
             const splitRecords = depositParticipantIds.map((id) => ({
               transaction_id: transactionId,
@@ -744,7 +765,9 @@ export default function EditTransactionPage() {
             if (splitRecords.length > 0) {
               const { error: splitError } = await supabase.from('transaction_splits').insert(splitRecords)
               if (splitError) {
-                handleError(splitError, '保存分攤失敗')
+                // 如果 splits 創建失敗，嘗試恢復舊 splits（但由於已刪除，無法完全恢復）
+                // 至少提示用戶需要重新編輯
+                handleError(splitError, '保存分攤失敗，請重新編輯此交易')
                 setSaving(false)
                 return
               }
@@ -774,10 +797,20 @@ export default function EditTransactionPage() {
               return
             }
 
-            await supabase.from('transaction_splits').delete().eq('transaction_id', transactionId)
+            // 先更新 transaction 成功後，再刪除舊 splits
+            const { error: deleteError } = await supabase
+              .from('transaction_splits')
+              .delete()
+              .eq('transaction_id', transactionId)
+
+            if (deleteError) {
+              handleError(deleteError, '刪除舊分攤失敗')
+              setSaving(false)
+              return
+            }
 
             // Add split record for personal income
-            await supabase
+            const { error: splitError } = await supabase
               .from("transaction_splits")
               .insert({
                 transaction_id: transactionId,
@@ -786,6 +819,13 @@ export default function EditTransactionPage() {
                 user_id: user.id,
                 amount: finalAmount,
               });
+
+            if (splitError) {
+              // 如果 split 創建失敗，提示用戶需要重新編輯
+              handleError(splitError, '保存分攤失敗，請重新編輯此交易')
+              setSaving(false)
+              return
+            }
           }
         }
       } else {
@@ -883,11 +923,17 @@ export default function EditTransactionPage() {
           return
         }
 
-        // Delete old splits
-        await supabase
+        // 先更新 transaction 成功後，再刪除舊 splits
+        const { error: deleteError } = await supabase
           .from('transaction_splits')
           .delete()
           .eq('transaction_id', transactionId)
+
+        if (deleteError) {
+          handleError(deleteError, '刪除舊分攤失敗')
+          setSaving(false)
+          return
+        }
 
         // Create new splits
         const effectiveSplitWithIds =
@@ -939,11 +985,9 @@ export default function EditTransactionPage() {
             }
 
             // Debtors: union of selected participants + public share participants (exclude payer)
-            const allDebtorIds = Array.from(new Set([...effectiveSplitWithIds, ...basePublicShareIds])).filter(
-              (id) => id !== finalPayerId
-            )
+            const allPotentialDebtorIds = [...new Set([...effectiveSplitWithIds, ...basePublicShareIds])]
 
-            splitRecords = allDebtorIds.map((participantId) => {
+            splitRecords = allPotentialDebtorIds.map((participantId) => {
               const isInPublicShare = publicShareParticipants.includes(participantId)
               const publicShare = isInPublicShare ? publicSharePerPerson : 0
               const isPersonalShare = personalShareParticipants.includes(participantId)
@@ -957,7 +1001,7 @@ export default function EditTransactionPage() {
                 user_id: participantId,
                 amount: totalDebt,
               }
-            }).filter((r) => r.amount > 0)
+            }).filter((r) => r.amount > 0 && r.user_id !== finalPayerId)
           } else {
             // Regular expense: split among Split with participants (empty => payer-only)
             const custom = computeCustomSplits(totalInt, effectiveSplitWithIds)
@@ -976,9 +1020,17 @@ export default function EditTransactionPage() {
           }
 
           if (splitRecords.length > 0) {
-            await supabase
+            const { error: splitError } = await supabase
               .from('transaction_splits')
               .insert(splitRecords)
+
+            if (splitError) {
+              // 如果 splits 創建失敗，嘗試恢復舊 splits（但由於已刪除，無法完全恢復）
+              // 至少提示用戶需要重新編輯
+              handleError(splitError, '保存分攤失敗，請重新編輯此交易')
+              setSaving(false)
+              return
+            }
           }
         }
       }
@@ -1111,8 +1163,7 @@ export default function EditTransactionPage() {
 
       const remainingAmount = totalInt - finalPublicAmount
 
-      const defaultPublicShareIds = participants.map((p) => p.id)
-      const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
+      const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : participants.map((p) => p.id)
       const publicShareParticipants = Array.from(new Set(basePublicShareIds))
       const publicShareCount = publicShareParticipants.length
       if (publicShareCount === 0) {
@@ -1144,9 +1195,14 @@ export default function EditTransactionPage() {
           const personalShare = isPersonalShare ? (personalShares.amounts[participantId] || 0) : 0
 
           const totalDebt = Math.ceil(publicShare + personalShare)
-          return totalDebt > 0 ? { participant, amount: totalDebt } : null
+          return totalDebt > 0 ? { 
+            participant, 
+            amount: totalDebt,
+            publicShare: Math.ceil(publicShare),
+            personalShare: Math.ceil(personalShare)
+          } : null
         })
-        .filter((d): d is { participant: Participant; amount: number } => d !== null)
+        .filter((d): d is { participant: Participant; amount: number; publicShare: number; personalShare: number } => d !== null && d !== undefined)
 
       const totalAmountToCollect = debtors.reduce((sum, debtor) => sum + debtor.amount, 0)
       const payerOutOfPocket = Math.max(0, totalInt - totalAmountToCollect)
@@ -1204,6 +1260,7 @@ export default function EditTransactionPage() {
 
   // Validation logic for save button
   const canSave = () => {
+    if (isViewer) return false;
     // Must have valid amount
     if (!isValidAmount()) {
       return false;
@@ -1287,12 +1344,12 @@ export default function EditTransactionPage() {
             <div className="flex items-center justify-between w-full">
               <button
                 onClick={() => router.back()}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all text-text-muted hover:text-text-main"
-              >
-                <ArrowLeft className="w-5 h-5" />
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all text-text-muted hover:text-text-main"
+            >
+              <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-lg font-bold text-text-main">{title}</h1>
-              <div className="w-10"></div>
+            <h1 className="text-lg font-bold text-text-main">{title}</h1>
+            <div className="w-10"></div>
             </div>
           </header>
 
@@ -1310,7 +1367,7 @@ export default function EditTransactionPage() {
                   {amount}
                 </div>
               </div>
-            </div>
+              </div>
 
             <div className="flex flex-col gap-4" onClick={() => setShowKeypad(false)}>
               {/* Counterparty Selection */}
@@ -1397,6 +1454,7 @@ export default function EditTransactionPage() {
           </main>
 
           <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
+            {!isViewer ? (
             <div className="flex gap-4">
               <button
                 onClick={() => setShowDeleteModal(true)}
@@ -1415,6 +1473,11 @@ export default function EditTransactionPage() {
                 {saving ? '儲存中...' : '儲存'}
               </button>
             </div>
+            ) : (
+              <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium">
+                Viewer 模式：僅供檢視，無法修改
+              </div>
+            )}
           </div>
 
           {showDeleteModal && (
@@ -1512,17 +1575,17 @@ export default function EditTransactionPage() {
         details={error?.details}
       />
     <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto">
-          <header className="pt-8 pb-4 px-6 flex flex-col gap-4 z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
-            <div className="flex items-center justify-between w-full">
+      <header className="pt-8 pb-4 px-6 flex flex-col gap-4 z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
+        <div className="flex items-center justify-between w-full">
               <button
                 onClick={() => router.back()}
-                className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all text-text-muted hover:text-text-main"
-              >
-                <ArrowLeft className="w-5 h-5" />
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all text-text-muted hover:text-text-main"
+          >
+            <ArrowLeft className="w-5 h-5" />
               </button>
               <h1 className="text-lg font-bold text-text-main">編輯交易</h1>
-              <div className="w-10"></div>
-            </div>
+          <div className="w-10"></div>
+        </div>
         <div className="w-full flex justify-center">
           <div className="bg-white p-1 rounded-full border border-gray-100 flex relative w-64 shadow-sm">
             <button
@@ -1557,6 +1620,7 @@ export default function EditTransactionPage() {
             <div 
               onClick={(e) => {
                 e.stopPropagation();
+                setShouldResetAmount(true);
                 setShowKeypad(true);
               }}
               className={`bg-white rounded-pill py-4 px-8 shadow-sm border border-gray-100 flex items-center justify-center min-w-[120px] max-w-[240px] cursor-pointer relative z-[101] break-all whitespace-pre-wrap ${
@@ -1570,7 +1634,7 @@ export default function EditTransactionPage() {
           </div>
 
           {/* Payer and Debtors - Only for Expense */}
-          {transactionType === 'expense' && (
+          {transactionType === 'expense' && payerId !== DEPOSIT_PAYER_ID && (
             <div className="mt-6 flex items-center justify-center gap-4 text-sm font-medium relative z-[101]">
               <div className="flex flex-col items-center gap-1">
                 <span className="text-text-muted text-xs">付款人 Payer</span>
@@ -1619,6 +1683,40 @@ export default function EditTransactionPage() {
                     <span className="text-text-muted text-xs">-</span>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* More detailed breakdown for shared expense (keep spacing tidy, style aligned with /add) */}
+          {transactionType === 'expense' && isPublicExpense && debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
+            <div className="px-6 w-full mt-4 mb-6" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                  詳細分攤 Details
+                </div>
+                <div className="flex flex-col gap-2">
+                  {(debtors as Array<{ participant: Participant; amount: number; publicShare?: number; personalShare?: number }>)
+                    .filter((debtor) => 
+                      typeof debtor.publicShare === 'number' && typeof debtor.personalShare === 'number'
+                    )
+                    .map((debtor) => {
+                      const publicShare = typeof debtor.publicShare === 'number' ? debtor.publicShare : 0;
+                      const personalShare = typeof debtor.personalShare === 'number' ? debtor.personalShare : 0;
+                      return (
+                        <div
+                          key={`detail-${debtor.participant.id}`}
+                          className="w-full flex items-center justify-between gap-3 bg-white px-3 py-2 rounded-full shadow-sm border border-gray-100"
+                        >
+                          <span className="text-xs font-semibold text-text-main truncate">
+                            {debtor.participant.name}
+                          </span>
+                          <span className="text-[11px] text-text-muted whitespace-nowrap">
+                            公費 {publicShare.toFixed(0)} + 個人 {personalShare.toFixed(0)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
             </div>
           )}
@@ -1810,7 +1908,7 @@ export default function EditTransactionPage() {
                   setPayerModalMode('expense')
                   setTimeout(() => setShowPayerModal(true), 100)
                 }}
-                className="flex items-center justify-between mb-5 border-b border-gray-100 pb-5 cursor-pointer"
+                className={`flex items-center justify-between ${payerId !== DEPOSIT_PAYER_ID ? 'mb-5 border-b border-gray-100 pb-5' : ''} cursor-pointer`}
               >
                 <span className="text-sm font-bold text-[#657486] tracking-wide">
                   Payer
@@ -1839,6 +1937,8 @@ export default function EditTransactionPage() {
                 </div>
               </div>
 
+              {payerId !== DEPOSIT_PAYER_ID && (
+                <>
               <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
                 Split with
               </label>
@@ -1946,24 +2046,43 @@ export default function EditTransactionPage() {
                     Shared expense Amount ($)
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={publicAmount}
                     onChange={(e) => {
                       const next = e.target.value
                       const total = Math.ceil(parseFloat(amount) || 0)
                       if (next === '') {
-                        setPublicAmount('0')
+                        setPublicAmount('')
                       } else {
                         const n = parseFloat(next)
                         if (isNaN(n)) {
-                          setPublicAmount(next)
+                          if (/^[0-9]*\.?[0-9]*$/.test(next)) {
+                            setPublicAmount(next)
+                          }
                         } else if (total > 0) {
-                          setPublicAmount(Math.min(Math.ceil(n), total).toString())
+                          setPublicAmount(next)
                         } else {
                           setPublicAmount(next)
                         }
                       }
                       setPublicAmountManuallySet(true)
+                    }}
+                    onBlur={(e) => {
+                      const val = e.target.value
+                      if (val === '') {
+                        setPublicAmount('0')
+                      } else {
+                        const n = parseFloat(val)
+                        if (!isNaN(n)) {
+                          const total = Math.ceil(parseFloat(amount) || 0)
+                          if (total > 0) {
+                            setPublicAmount(Math.min(Math.ceil(n), total).toString())
+                          } else {
+                            setPublicAmount(Math.ceil(n).toString())
+                          }
+                        }
+                      }
                     }}
                     placeholder="Auto-calculated"
                     className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
@@ -2025,6 +2144,8 @@ export default function EditTransactionPage() {
                     </div>
                   </div>
                 </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -2092,38 +2213,44 @@ export default function EditTransactionPage() {
         </div>
       </main>
 
-          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
-            <div className="flex gap-4">
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
-              >
-                <span className="material-symbols-outlined">delete</span>
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
+        {!isViewer ? (
+        <div className="flex gap-4">
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+          >
+            <span className="material-symbols-outlined">delete</span>
                 刪除
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !canSave()}
-                className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors ${
-                  saving || !canSave()
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
-                }`}
-              >
-                {saving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !canSave()}
+            className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors ${
+              saving || !canSave()
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
+            }`}
+          >
+            {saving ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                     <span>儲存中...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined">check</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined">check</span>
                     儲存
-                  </>
-                )}
-              </button>
-            </div>
+              </>
+            )}
+          </button>
+        </div>
+        ) : (
+          <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium">
+            Viewer 模式：僅供檢視，無法修改
           </div>
+        )}
+      </div>
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (

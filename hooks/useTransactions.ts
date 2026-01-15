@@ -42,6 +42,8 @@ const getTransactions = async (params: TransactionQueryParams) => {
           type,
           payer_id,
           category_id,
+          expense_payment_source,
+          income_mode,
           created_at${includeCategory ? ', categories (id, name, icon)' : ''}
         )
       `)
@@ -78,29 +80,66 @@ const getTransactions = async (params: TransactionQueryParams) => {
       amount: s.amount, // 使用分帳後的金額
     }))
 
-    // 處理 Payer 資訊
-    if (includePayer && formattedData.length > 0) {
-      const payerIds = Array.from(new Set(formattedData.map((tx: any) => tx.payer_id)))
-        .filter((id): id is string => id != null)
+    // 處理 Payer 資訊 - 使用 JOIN 一次查詢獲取
+    if (includePayer) {
+      // 使用 JOIN 查詢，一次獲取 transactions 和 payer profiles
+      let queryWithPayer = supabase
+        .from('transaction_splits')
+        .select(`
+          amount,
+          transactions!inner (
+            id,
+            description,
+            date,
+            type,
+            payer_id,
+            category_id,
+            expense_payment_source,
+            income_mode,
+            created_at,
+            payer:profiles!transactions_payer_id_fkey (id, full_name, avatar_url)${includeCategory ? ', categories (id, name, icon)' : ''}
+          )
+        `)
+        .eq(scopeColumn, ledgerId)
+        .eq('user_id', userId)
 
-      if (payerIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, full_name')
-          .in('id', payerIds)
-
-        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]))
-        return formattedData.map((tx: any) => ({
-          ...tx,
-          payer: profileMap.get(tx.payer_id) || null,
-        }))
+      if (type) {
+        queryWithPayer = queryWithPayer.eq('transactions.type', type)
       }
+      if (startDate) {
+        queryWithPayer = queryWithPayer.gte('transactions.date', startDate)
+      }
+      if (endDate) {
+        queryWithPayer = queryWithPayer.lte('transactions.date', endDate)
+      }
+
+      queryWithPayer = queryWithPayer.order('transactions(created_at)', { ascending: false })
+      queryWithPayer = queryWithPayer.order('transactions(date)', { ascending: false })
+
+      if (limit) {
+        queryWithPayer = queryWithPayer.limit(limit)
+      }
+
+      const { data: dataWithPayer, error: errorWithPayer } = await queryWithPayer
+
+      if (errorWithPayer) {
+        console.error('Error fetching user transaction splits with payer:', errorWithPayer)
+        return formattedData.map((tx: any) => ({ ...tx, payer: null }))
+      }
+
+      // 格式化回傳結構，payer 資訊已經通過 JOIN 獲取
+      return (dataWithPayer || []).map((s: any) => ({
+        ...s.transactions,
+        amount: s.amount,
+        payer: s.transactions.payer || null,
+      }))
     }
 
     return formattedData.map((tx: any) => ({ ...tx, payer: null }))
   }
 
   // 原有的全帳本查詢邏輯
+  // 如果 includePayer 為 true，使用 JOIN 一次查詢獲取 payer 資訊
   let query = supabase
     .from('transactions')
     .select(`
@@ -111,7 +150,9 @@ const getTransactions = async (params: TransactionQueryParams) => {
       type,
       payer_id,
       category_id,
-      created_at${includeCategory ? ', categories (id, name, icon)' : ''}
+      expense_payment_source,
+      income_mode,
+      created_at${includeCategory ? ', categories (id, name, icon)' : ''}${includePayer ? ', payer:profiles!transactions_payer_id_fkey (id, full_name, avatar_url)' : ''}
     `)
     .eq(scopeColumn, ledgerId)
 
@@ -141,27 +182,12 @@ const getTransactions = async (params: TransactionQueryParams) => {
     return []
   }
 
-  // If includePayer is true, fetch payer profiles
+  // If includePayer is true, payer info is already included via JOIN
   if (includePayer && data && data.length > 0) {
-    const payerIds = data
-      .map((tx: any) => tx.payer_id)
-      .filter((id: string | null): id is string => id != null)
-
-    if (payerIds.length > 0) {
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', payerIds)
-
-      const profileMap = new Map(
-        (profiles || []).map((p: any) => [p.id, p])
-      )
-
-      return data.map((tx: any) => ({
-        ...tx,
-        payer: profileMap.get(tx.payer_id) || null,
-      }))
-    }
+    return data.map((tx: any) => ({
+      ...tx,
+      payer: tx.payer || null,
+    }))
   }
 
   return (data || []).map((tx: any) => ({

@@ -42,6 +42,31 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Missing symbol or exchange' }, { status: 400 })
     }
 
+    // 根據交易所調整緩存時間
+    // TWSE: 台灣股市，交易時間內需要更頻繁更新（1分鐘），非交易時間可以更長（5分鐘）
+    // FOREX: 外匯市場，24小時交易，需要較頻繁更新（1分鐘）
+    // CRYPTO: 加密貨幣，24小時交易，需要較頻繁更新（1分鐘）
+    // INDEX: 指數，根據市場時間調整（1-5分鐘）
+    const getCacheTime = (exchange: string): number => {
+      const now = new Date()
+      const hour = now.getHours()
+      const isTradingHours = (hour >= 9 && hour < 15) // 台灣股市交易時間 9:00-15:00
+      
+      switch (exchange) {
+        case 'TWSE':
+          return isTradingHours ? 60 : 300 // 交易時間內 1 分鐘，非交易時間 5 分鐘
+        case 'FOREX':
+        case 'CRYPTO':
+          return 60 // 24小時交易，1 分鐘
+        case 'INDEX':
+          return isTradingHours ? 60 : 300 // 交易時間內 1 分鐘，非交易時間 5 分鐘
+        default:
+          return 60 // 預設 1 分鐘
+      }
+    }
+
+    const cacheTime = getCacheTime(exchange)
+
     if (exchange === 'TWSE' || exchange === 'FOREX' || exchange === 'CRYPTO' || exchange === 'INDEX') {
       const yahooSymbol = getYahooSymbol(symbol, exchange)
       
@@ -53,7 +78,7 @@ export async function GET(request: Request) {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
               'Accept': 'application/json',
             },
-            next: { revalidate: 60 },
+            next: { revalidate: cacheTime },
             signal: AbortSignal.timeout(8000)
           }
         )
@@ -75,6 +100,9 @@ export async function GET(request: Request) {
               const open = meta.regularMarketOpen || meta.previousClose || 0
               const volume = meta.regularMarketVolume || 0
               
+              // 添加響應緩存標頭
+              // s-maxage: CDN 緩存時間（秒）
+              // stale-while-revalidate: 允許在重新驗證時使用過期緩存
               return NextResponse.json({
                 symbol: symbol,
                 name: meta.shortName || symbol,
@@ -85,6 +113,12 @@ export async function GET(request: Request) {
                 high,
                 low,
                 open
+              }, {
+                headers: {
+                  'Cache-Control': `public, s-maxage=${cacheTime}, stale-while-revalidate=${cacheTime * 2}`,
+                  'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+                  'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
+                }
               })
             }
           }
@@ -94,6 +128,7 @@ export async function GET(request: Request) {
       }
     }
 
+    // 即使失敗也返回緩存響應，但使用較短的緩存時間
     return NextResponse.json({
       symbol,
       name: symbol,
@@ -104,6 +139,10 @@ export async function GET(request: Request) {
       high: 0,
       low: 0,
       open: 0
+    }, {
+      headers: {
+        'Cache-Control': `public, s-maxage=30, stale-while-revalidate=60`,
+      }
     })
   } catch (error) {
     console.error('Stock price API error:', error)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLedger } from "@/contexts/LedgerContext";
@@ -9,8 +9,7 @@ import { useProfiles } from "@/hooks/useProfiles";
 import { useParticipants } from "@/hooks/useParticipants";
 import { useOutstandingTotal } from "@/hooks/useOutstandingTotal";
 import { useTransactions } from "@/hooks/useTransactions";
-import { useQuery } from '@tanstack/react-query';
-import { createClient } from '@/lib/supabase/client';
+import { useSettlements } from "@/hooks/useSettlements";
 import LedgerDropdown from "@/components/LedgerDropdown";
 import SemiCircleProgress from "@/components/SemiCircleProgress";
 import TransactionCard from "@/components/TransactionCard";
@@ -27,7 +26,7 @@ interface HomePageClientProps {
   initialLedgers: any[];
 }
 
-export default function HomePageClient({
+const HomePageClient = memo(function HomePageClient({
   totalIncome: initialIncome,
   totalExpenses: initialExpenses,
   outstanding: initialOutstanding,
@@ -41,17 +40,24 @@ export default function HomePageClient({
   const { activeLedger } = useLedger();
   const { data: user } = useUser();
   const { data: profileMap } = useProfiles(user?.id ? [user.id] : []);
-  const currentUserProfile = user?.id ? profileMap?.get(user.id) : null;
+  const currentUserProfile = useMemo(() => 
+    user?.id ? profileMap?.get(user.id) : null,
+    [user?.id, profileMap]
+  );
   const { data: participants = [] } = useParticipants(activeLedger?.id || null);
   const { data: realTimeOutstanding } = useOutstandingTotal(
     activeLedger?.id || null,
     activeLedger?.type as 'ledger' | 'account_book'
   );
 
-  // Get current month date range for total income/expenses
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+  // Get current month date range for total income/expenses - memoize to avoid recalculation
+  const { startOfMonth, endOfMonth } = useMemo(() => {
+    const now = new Date();
+    return {
+      startOfMonth: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
+      endOfMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString(),
+    };
+  }, []); // Only recalculate when component mounts or month changes (could add month dependency if needed)
 
   const { data: realTimeTransactions } = useTransactions({
     ledgerId: activeLedger?.id || '',
@@ -61,34 +67,42 @@ export default function HomePageClient({
     includePayer: true,
   });
 
-  const { data: settlements = [] } = useQuery({
-    queryKey: ['settlements', 'recent', activeLedger?.id],
+  const { data: settlements = [] } = useSettlements({
+    ledgerId: activeLedger?.id || null,
+    ledgerType: activeLedger?.type as 'ledger' | 'account_book' | undefined,
+    limit: 5,
     enabled: !!activeLedger?.id,
-    queryFn: async () => {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('settlements')
-        .select('id, sender_id, receiver_id, amount, created_at, date, note')
-        .eq('ledger_id', activeLedger!.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-      return error ? [] : data;
-    },
   });
 
   const displayTransactions = useMemo(() => {
-    const txs = (realTimeTransactions || initialTransactions).map(tx => ({
-      ...tx,
-      isSettlement: false,
-      sortDate: new Date(tx.created_at) // 以記帳時間排序
-    }));
+    const txs = (realTimeTransactions || initialTransactions).map(tx => {
+      // Pre-compute formatted date and payer text for each transaction
+      const formattedDate = new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      let payerText = '';
+      if (tx.expense_payment_source === 'deposit' || tx.income_mode === 'deposit') {
+        payerText = '儲值金';
+      } else if (tx.payer_id === user?.id) {
+        payerText = "You paid";
+      } else if (tx.payer) {
+        payerText = `${tx.payer.full_name?.split(' ')[0] || tx.payer.name || "Someone"} paid`;
+      }
+      
+      return {
+        ...tx,
+        isSettlement: false,
+        sortDate: new Date(tx.created_at), // 以記帳時間排序
+        formattedDate, // Pre-computed formatted date
+        payerText: tx.payerText || payerText, // Pre-computed payer text
+      };
+    });
 
     const sts = settlements.map((s: any) => {
       const isIncoming = s.receiver_id === user?.id;
       const sender = participants.find(p => p.id === s.sender_id);
       const receiver = participants.find(p => p.id === s.receiver_id);
       const senderName = sender?.name || '有人';
-      const payerText = isIncoming ? `${senderName} paid` : '';
+      const receiverName = receiver?.name || '有人';
+      const payerText = isIncoming ? `${senderName} paid` : `${receiverName} paid`;
       
       return {
         id: `settlement-${s.id}`,
@@ -100,7 +114,8 @@ export default function HomePageClient({
         sortDate: new Date(s.created_at), // 以記帳時間排序
         categories: { name: 'Repayment', icon: '🤝' },
         payer: sender,
-        payerText: payerText
+        payerText: payerText,
+        formattedDate: new Date(s.date || s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       };
     });
 
@@ -122,31 +137,55 @@ export default function HomePageClient({
   const [isOutstandingModalOpen, setIsOutstandingModalOpen] = useState(false);
 
   // Real-time calculation for Total Balance (個人餘額：個人的分帳收入 - 個人的分帳支出)
-  const transactionsToUse = monthlyTransactions || [];
-  const totalIncome = transactionsToUse
-    .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true) // 排除還款
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
-  const totalExpenses = transactionsToUse
-    .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')
-    .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  // Memoize calculations to avoid unnecessary recalculations
+  const { totalIncome, totalExpenses } = useMemo(() => {
+    const transactionsToUse = monthlyTransactions || [];
+    return {
+      totalIncome: transactionsToUse
+        .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true) // 排除還款
+        .reduce((sum, tx) => sum + Number(tx.amount), 0),
+      totalExpenses: transactionsToUse
+        .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')
+        .reduce((sum, tx) => sum + Number(tx.amount), 0),
+    };
+  }, [monthlyTransactions]);
 
-  // 顯示該使用者的個人結餘 (只限本月)
-  const displayIncome = monthlyTransactions ? totalIncome : initialIncome;
-  const displayExpenses = monthlyTransactions ? totalExpenses : initialExpenses;
-  const displayPercentage = monthlyTransactions 
-    ? (displayIncome > 0 ? Math.min(100, Math.max(0, Math.round((displayExpenses / displayIncome) * 100))) : 0)
-    : initialPercentage;
+  // 顯示該使用者的個人結餘 (只限本月) - memoize to avoid recalculation
+  const { displayIncome, displayExpenses, displayPercentage } = useMemo(() => {
+    const income = monthlyTransactions ? totalIncome : initialIncome;
+    const expenses = monthlyTransactions ? totalExpenses : initialExpenses;
+    const percentage = monthlyTransactions 
+      ? (income > 0 ? Math.min(100, Math.max(0, Math.round((expenses / income) * 100))) : 0)
+      : initialPercentage;
+    return { displayIncome: income, displayExpenses: expenses, displayPercentage: percentage };
+  }, [monthlyTransactions, totalIncome, totalExpenses, initialIncome, initialExpenses, initialPercentage]);
 
-  const displayOutstanding = realTimeOutstanding ?? initialOutstanding;
+  const displayOutstanding = useMemo(() => 
+    realTimeOutstanding ?? initialOutstanding,
+    [realTimeOutstanding, initialOutstanding]
+  );
 
-  const absOutstanding = Math.abs(displayOutstanding);
-  const othersOweMe = displayOutstanding > 0;
-  const iOweOthers = displayOutstanding < 0;
+  const { absOutstanding, othersOweMe, iOweOthers } = useMemo(() => {
+    const abs = Math.abs(displayOutstanding);
+    return {
+      absOutstanding: abs,
+      othersOweMe: displayOutstanding > 0,
+      iOweOthers: displayOutstanding < 0,
+    };
+  }, [displayOutstanding]);
 
-  const otherParticipants = participants.filter(p => p.id !== user?.id);
+  const otherParticipants = useMemo(() => 
+    participants.filter(p => p.id !== user?.id),
+    [participants, user?.id]
+  );
+
+  // Memoize navigation click handler
+  const handleOutstandingClick = useCallback(() => {
+    router.push('/outstanding');
+  }, [router]);
 
   return (
-    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto">
+    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto pb-32">
       <header className="pt-8 pb-4 px-6 flex items-center justify-center z-[100]">
         <LedgerDropdown className="w-auto" />
       </header>
@@ -167,7 +206,7 @@ export default function HomePageClient({
         {/* Total Outstanding Card */}
         <div 
           className="mt-6 cursor-pointer"
-          onClick={() => router.push('/outstanding')}
+          onClick={handleOutstandingClick}
         >
           <div className="bg-white rounded-card p-5 shadow-soft flex flex-col">
             <div className="flex items-center justify-between px-2 mb-4">
@@ -243,12 +282,12 @@ export default function HomePageClient({
                   key={tx.id}
                   id={tx.id}
                   title={tx.description || tx.categories?.name || "Transaction"}
-                  date={new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                  date={tx.formattedDate || new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                   categoryName={tx.categories?.name || "General"}
                   amount={tx.amount}
                   amountPrefix={tx.type === 'income' ? '+' : '-'}
                   amountColor={tx.type === 'income' ? 'text-green-500' : 'text-text-main'}
-                  payerText={tx.payerText || (tx.payer_id === user?.id ? "You paid" : `${tx.payer?.full_name?.split(' ')[0] || tx.payer?.name || "Someone"} paid`)}
+                  payerText={tx.payerText || ''}
                   categoryIcon={tx.categories?.icon || "💰"}
                   iconBg={tx.isSettlement ? 'bg-indigo-50 dark:bg-indigo-900/20' : (tx.type === 'income' ? 'bg-green-50' : 'bg-orange-50')}
                 />
@@ -265,7 +304,7 @@ export default function HomePageClient({
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-6 left-6 right-6 h-16 bg-white rounded-full shadow-float flex items-center justify-around px-2 z-20 max-w-md mx-auto">
+      <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-3rem)] max-w-md h-16 bg-white rounded-full shadow-float flex items-center justify-around px-2 z-50">
         <Link 
           href="/" 
           className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
@@ -280,10 +319,10 @@ export default function HomePageClient({
         </Link>
         <div className="w-12"></div>
         <Link 
-          href="/transactions" 
-          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/transactions' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
+          href="/finance" 
+          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/finance' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
         >
-          <span className={`material-symbols-outlined ${pathname === '/transactions' ? 'filled' : ''}`} style={pathname === '/transactions' ? { fontVariationSettings: "'FILL' 1" } : {}}>receipt_long</span>
+          <span className={`material-symbols-outlined ${pathname === '/finance' ? 'filled' : ''}`} style={pathname === '/finance' ? { fontVariationSettings: "'FILL' 1" } : {}}>account_balance_wallet</span>
         </Link>
         <Link 
           href="/settings" 
@@ -304,4 +343,8 @@ export default function HomePageClient({
       />
     </div>
   );
-}
+});
+
+HomePageClient.displayName = "HomePageClient";
+
+export default HomePageClient;

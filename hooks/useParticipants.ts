@@ -11,45 +11,57 @@ export interface Participant {
 const getParticipants = async (ledgerId: string, currentUserId: string): Promise<Participant[]> => {
   const supabase = createClient()
 
-  // Check if it's a ledger or account_book
-  const { data: ledger } = await supabase
-    .from('ledgers')
-    .select('id')
-    .eq('id', ledgerId)
-    .single()
+  // Check if it's a ledger or account_book, and fetch members and profiles in parallel
+  // Use regular query instead of .single() to avoid 406 errors when RLS blocks access
+  const [ledgerCheck, bookCheck] = await Promise.all([
+    supabase
+      .from('ledgers')
+      .select('id')
+      .eq('id', ledgerId)
+      .limit(1),
+    supabase
+      .from('account_books')
+      .select('id')
+      .eq('id', ledgerId)
+      .limit(1)
+  ])
 
-  if (ledger) {
-    // It's a ledger - get members from ledger_members
-    const { data: ledgerMembers, error: ledgerError } = await supabase
+  const isLedger = !ledgerCheck.error && ledgerCheck.data && ledgerCheck.data.length > 0
+  const isBook = !bookCheck.error && bookCheck.data && bookCheck.data.length > 0
+
+  if (isLedger) {
+    // It's a ledger - fetch members first, then profiles in parallel
+    const membersResult = await supabase
       .from('ledger_members')
       .select('user_id')
       .eq('ledger_id', ledgerId)
 
-    if (ledgerError) {
-      console.error('Error loading ledger members:', ledgerError)
+    if (membersResult.error) {
+      console.error('Error loading ledger members:', membersResult.error)
       return []
     }
 
-    const userIds = ledgerMembers?.map(m => m.user_id) || []
+    const userIds = membersResult.data?.map(m => m.user_id) || []
     if (userIds.length === 0) {
       return []
     }
 
-    const { data: profiles, error: profilesError } = await supabase
+    // Fetch profiles for these userIds (already optimized with .in())
+    const profilesResult = await supabase
       .from('profiles')
       .select('id, full_name, avatar_url')
       .in('id', userIds)
 
-    if (profilesError) {
-      console.error('Error loading profiles:', profilesError)
+    if (profilesResult.error) {
+      console.error('Error loading profiles:', profilesResult.error)
       return []
     }
 
-    const membersList: Participant[] = []
+    const profileMap = new Map((profilesResult.data || []).map(p => [p.id, p]))
 
-    // Find current user's profile first
-    const currentUserProfile = profiles?.find(p => p.id === currentUserId)
-    
+    const membersList: Participant[] = []
+    const currentUserProfile = profileMap.get(currentUserId)
+
     // Add current user first
     membersList.push({
       id: currentUserId,
@@ -59,52 +71,54 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
     })
 
     // Add other members
-    if (profiles) {
-      profiles.forEach((profile) => {
-        if (profile.id !== currentUserId) {
+    userIds.forEach((userId) => {
+      if (userId !== currentUserId) {
+        const profile = profileMap.get(userId)
+        if (profile) {
           membersList.push({
-            id: profile.id,
+            id: userId,
             name: profile.full_name || 'Unknown',
             avatar: profile.avatar_url || undefined,
             isPayer: false,
           })
         }
-      })
-    }
+      }
+    })
 
     return membersList
-  } else {
-    // It's an account_book - get members from book_members
-    const { data: bookMembers, error: bookError } = await supabase
+  } else if (isBook) {
+    // It's an account_book - fetch members first, then profiles
+    const membersResult = await supabase
       .from('book_members')
       .select('user_id')
       .eq('book_id', ledgerId)
 
-    if (bookError) {
-      console.error('Error loading book members:', bookError)
+    if (membersResult.error) {
+      console.error('Error loading book members:', membersResult.error)
       return []
     }
 
-    const userIds = bookMembers?.map(m => m.user_id) || []
+    const userIds = membersResult.data?.map(m => m.user_id) || []
     if (userIds.length === 0) {
       return []
     }
 
-    const { data: profiles, error: profilesError } = await supabase
+    // Fetch profiles for these userIds (already optimized with .in())
+    const profilesResult = await supabase
       .from('profiles')
       .select('id, full_name, avatar_url')
       .in('id', userIds)
 
-    if (profilesError) {
-      console.error('Error loading profiles:', profilesError)
+    if (profilesResult.error) {
+      console.error('Error loading profiles:', profilesResult.error)
       return []
     }
 
-    const membersList: Participant[] = []
+    const profileMap = new Map((profilesResult.data || []).map(p => [p.id, p]))
 
-    // Find current user's profile first
-    const currentUserProfile = profiles?.find(p => p.id === currentUserId)
-    
+    const membersList: Participant[] = []
+    const currentUserProfile = profileMap.get(currentUserId)
+
     // Add current user first
     membersList.push({
       id: currentUserId,
@@ -114,21 +128,24 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
     })
 
     // Add other members
-    if (profiles) {
-      profiles.forEach((profile) => {
-        if (profile.id !== currentUserId) {
+    userIds.forEach((userId) => {
+      if (userId !== currentUserId) {
+        const profile = profileMap.get(userId)
+        if (profile) {
           membersList.push({
-            id: profile.id,
+            id: userId,
             name: profile.full_name || 'Unknown',
             avatar: profile.avatar_url || undefined,
             isPayer: false,
           })
         }
-      })
-    }
+      }
+    })
 
     return membersList
   }
+
+  return []
 }
 
 export function useParticipants(ledgerId: string | null) {
