@@ -765,9 +765,9 @@ export default function EditTransactionPage() {
             }
             const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0)
             
-            // 檢查總額和分攤金額是否一致
-            if (Math.ceil(splitSum) !== totalInt) {
-              handleError(null, `split amount total (${Math.ceil(splitSum)}) does not match input total (${totalInt})`)
+            // 檢查分攤金額是否足夠（進位後可能會多一點，但不能少）
+            if (Math.ceil(splitSum) < totalInt) {
+              handleError(null, `split amount total (${Math.ceil(splitSum)}) is less than input total (${totalInt})`)
               setSaving(false)
               return
             }

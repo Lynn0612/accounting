@@ -25,6 +25,7 @@ interface CategoryData {
   amount: number
   percentage: number
   color: string
+  isDeposit?: boolean
 }
 
 export default function StatisticsPage() {
@@ -162,6 +163,8 @@ export default function StatisticsPage() {
           category_id,
           type,
           date,
+          income_mode,
+          expense_payment_source,
           categories (
             id,
             name,
@@ -197,12 +200,18 @@ export default function StatisticsPage() {
         icon: string
         amount: number
         transactionCount: number
+        isDeposit: boolean
       }>()
       let grandTotal = 0
 
       transactions.forEach((tx: any) => {
         const amount = parseFloat(tx.amount) || 0
         grandTotal += amount
+        // For income: check income_mode === 'deposit'
+        // For expense: check expense_payment_source === 'deposit'
+        const isDeposit = tx.type === 'income' 
+          ? tx.income_mode === 'deposit' 
+          : tx.expense_payment_source === 'deposit'
 
         if (tx.category_id && tx.categories) {
           // Use category data from join
@@ -210,36 +219,41 @@ export default function StatisticsPage() {
           const categoryName = category.name || 'Unknown'
           const categoryIcon = category.icon || '💰'
           
-          // Group by category name
-          const existing = categoryGroups.get(categoryName)
+          // Group by category name (and deposit status)
+          // For deposit transactions, use a separate key to distinguish from regular transactions of same category
+          const groupKey = isDeposit ? `${categoryName}_deposit` : categoryName
+          const existing = categoryGroups.get(groupKey)
           
           if (existing) {
             existing.amount += amount
             existing.transactionCount += 1
           } else {
-            categoryGroups.set(categoryName, {
+            categoryGroups.set(groupKey, {
               id: tx.category_id,
               name: categoryName,
               icon: categoryIcon,
               amount: amount,
-              transactionCount: 1
+              transactionCount: 1,
+              isDeposit: isDeposit
             })
           }
         } else if (tx.category_id) {
           // Fallback if category join failed
           const categoryName = 'Unknown'
-          const existing = categoryGroups.get(categoryName)
+          const groupKey = isDeposit ? `${categoryName}_deposit` : categoryName
+          const existing = categoryGroups.get(groupKey)
           
           if (existing) {
             existing.amount += amount
             existing.transactionCount += 1
           } else {
-            categoryGroups.set(categoryName, {
+            categoryGroups.set(groupKey, {
               id: tx.category_id,
               name: categoryName,
               icon: '💰',
               amount: amount,
-              transactionCount: 1
+              transactionCount: 1,
+              isDeposit: isDeposit
             })
           }
         }
@@ -255,7 +269,8 @@ export default function StatisticsPage() {
           icon: data.icon,
           amount: Math.round(data.amount * 100) / 100, // Round to 2 decimal places
           percentage: grandTotal > 0 ? Math.round((data.amount / grandTotal) * 100 * 100) / 100 : 0, // Round to 2 decimal places
-          color: colors[index % colors.length]
+          color: colors[index % colors.length],
+          isDeposit: data.isDeposit
         }))
         .sort((a, b) => b.amount - a.amount)
 
@@ -437,7 +452,7 @@ export default function StatisticsPage() {
                 <circle cx="50" cy="50" fill="transparent" r="40" stroke="#f1f5f9" strokeWidth="12"></circle>
                 {donutSegments.map((segment, index) => (
                   <circle
-                    key={segment.id}
+                    key={`${segment.id}-${index}-${segment.isDeposit ? 'deposit' : 'regular'}`}
                     className="transition-all duration-1000 ease-out"
                     cx="50"
                     cy="50"
@@ -465,12 +480,17 @@ export default function StatisticsPage() {
               </div>
             </div>
             <div className="w-full grid grid-cols-3 gap-3">
-              {categories.map((cat) => (
-                <div key={cat.id} className="flex items-center gap-2 p-2 rounded-xl bg-gray-50/50">
+              {categories.map((cat, index) => (
+                <div key={`${cat.id}-${index}`} className="flex items-center gap-2 p-2 rounded-xl bg-gray-50/50">
                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: cat.color }}></div>
                   <div className="flex flex-col">
                     <span className="text-xs text-text-secondary font-medium leading-none mb-1">{cat.name}</span>
-                    <span className="text-sm font-bold text-text-main leading-none">{cat.percentage.toFixed(0)}%</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm font-bold text-text-main leading-none">{cat.percentage.toFixed(0)}%</span>
+                      {cat.isDeposit && (
+                        <span className="text-[9px] text-primary font-semibold bg-primary/10 px-1 rounded">Deposit</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -525,7 +545,7 @@ export default function StatisticsPage() {
 
               return (
                 <div
-                  key={cat.id}
+                  key={`${cat.id}-${index}`}
                   className="bg-white p-4 rounded-[24px] shadow-card flex items-center justify-between gap-4 group cursor-pointer hover:shadow-soft transition-all duration-300"
                 >
                   <div className="flex items-center gap-4 flex-1">
@@ -539,9 +559,14 @@ export default function StatisticsPage() {
                     <div className="flex flex-col gap-1 flex-1">
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-text-main text-sm">{cat.name}</span>
-                        <span className="font-bold text-text-main text-sm">
-                          {formatAmountSimple(cat.amount)}
-                        </span>
+                        <div className="flex flex-col items-end">
+                          <span className="font-bold text-text-main text-sm">
+                            {formatAmountSimple(cat.amount)}
+                          </span>
+                          {cat.isDeposit && (
+                            <span className="text-[10px] text-primary font-semibold">Deposit</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

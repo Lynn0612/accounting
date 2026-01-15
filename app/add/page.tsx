@@ -892,9 +892,9 @@ export default function AddTransactionPage() {
           }
           const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0);
           
-          // 檢查總額和分攤金額是否一致
-          if (Math.ceil(splitSum) !== totalInt) {
-            handleError(null, `split amount total (${Math.ceil(splitSum)}) does not match input total (${totalInt})`);
+          // 檢查分攤金額是否足夠（進位後可能會多一點，但不能少）
+          if (Math.ceil(splitSum) < totalInt) {
+            handleError(null, `split amount total (${Math.ceil(splitSum)}) is less than input total (${totalInt})`);
             setSaving(false);
             return;
           }
@@ -1248,19 +1248,19 @@ export default function AddTransactionPage() {
 
       // 只有在有 splits 時才插入，如果 splits 為空（例如只有付款人沒有分攤對象），transaction 仍然有效
       if (splitRecords.length > 0) {
-        const { error: splitError } = await supabase
-          .from("transaction_splits")
-          .insert(splitRecords);
+      const { error: splitError } = await supabase
+        .from("transaction_splits")
+        .insert(splitRecords);
 
-        if (splitError) {
+      if (splitError) {
           // 如果 splits 創建失敗，刪除已創建的 transaction 以保持數據一致性
           await supabase
             .from("transactions")
             .delete()
             .eq('id', transaction.id);
           handleError(splitError, 'save split failed, transaction cancelled');
-          setSaving(false);
-          return;
+        setSaving(false);
+        return;
         }
       }
 
@@ -1721,7 +1721,7 @@ export default function AddTransactionPage() {
                 className={`flex items-center justify-between ${payerId !== DEPOSIT_PAYER_ID ? 'mb-5 border-b border-gray-100 pb-5' : ''} cursor-pointer`}
               >
                 <span className="text-sm font-bold text-[#657486] tracking-wide">
-                Payer
+                  Payer
                 </span>
                 <div className="flex items-center gap-2">
                   {(() => {
@@ -1863,25 +1863,25 @@ export default function AddTransactionPage() {
               </div>
             )}
             {isMultiMemberLedger && (
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                    <span className="material-symbols-outlined">groups</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-text-main">Shared expense</h4>
-                  </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                  <span className="material-symbols-outlined">groups</span>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isPublicExpense}
-                    onChange={(e) => setIsPublicExpense(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                </label>
+                <div>
+                  <h4 className="font-semibold text-text-main">Shared expense</h4>
+                </div>
               </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPublicExpense}
+                  onChange={(e) => setIsPublicExpense(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
             )}
             {isPublicExpense && isMultiMemberLedger && (
               <div className="mt-4 pt-4 border-t border-gray-100">
@@ -1901,7 +1901,7 @@ export default function AddTransactionPage() {
                       const n = parseFloat(next);
                       if (isNaN(n)) {
                         if (/^[0-9]*\.?[0-9]*$/.test(next)) {
-                          setPublicAmount(next);
+                        setPublicAmount(next);
                         }
                       } else if (total > 0) {
                         setPublicAmount(next);
