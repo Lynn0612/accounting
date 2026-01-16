@@ -108,7 +108,7 @@ export default function AuthCallbackPage() {
             await new Promise(resolve => setTimeout(resolve, 1000));
             
             // 使用 replace 確保不會留下一堆 callback 歷史紀錄
-            console.log("登入成功，正在強制跳轉...");
+            console.log("Login successful, redirecting...");
             window.location.replace('/');
             return;
           } else {
@@ -268,7 +268,7 @@ export default function AuthCallbackPage() {
   }, []);
 
   if (loading && !error) {
-    return <Loading fullScreen message="登入中..." size="lg" />;
+    return <Loading fullScreen message="Logging in..." size="lg" />;
   }
 
   if (error) {
@@ -293,5 +293,5 @@ export default function AuthCallbackPage() {
     );
   }
 
-  return <Loading fullScreen message="登入中..." size="lg" />;
+  return <Loading fullScreen message="Logging in..." size="lg" />;
 }

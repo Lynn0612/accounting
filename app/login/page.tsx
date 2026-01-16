@@ -114,35 +114,22 @@ export default function LoginPage() {
 
         <div className="flex-1 flex flex-col items-center justify-center px-6 z-10 min-h-0">
           <div className="flex flex-col items-center gap-2 mb-8">
-            <h1 className="text-primary tracking-tight text-[40px] font-extrabold leading-tight text-center">
-              Warikan
+            <h1 className="text-primary tracking-tight text-[30px] font-extrabold leading-tight text-center">
+            Track Your Expenses
             </h1>
             <p className="text-[#657486] text-lg font-medium leading-normal text-center max-w-[260px]">
-              Split bills, keep friends.
+            Financial Freedom
             </p>
           </div>
 
-          <div className="relative flex items-center justify-center w-full aspect-square max-w-[280px] mb-10 group flex-shrink-0">
-            <div className="absolute inset-0 bg-white/60 rounded-full blur-3xl scale-90"></div>
+          <div className="relative flex items-center justify-center w-full aspect-square max-w-[600px] mb-10 group flex-shrink-0">
             <div
-              className="cloud-shadow w-full h-full bg-contain bg-center bg-no-repeat transition-transform duration-700 ease-in-out hover:scale-105"
+              className="w-full h-full bg-contain bg-center bg-no-repeat transition-transform duration-700 ease-in-out hover:scale-105"
               style={{
-                backgroundImage:
-                  'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBwxkDGwwLZnZmB3O14WqBiATGUJNC9kVAIaWGrCEUITCat5nbfm96hbDtXChXMdX6x5bc3JQMcgRuBXN6RLF2ap3HWqMKm_dtsoJhe48pFdq2K64mpslF1IwxgnRdtrErq45bDThQtHF9W1EFvgGcFMerNG0kbIKTXRtQnGC4p_DCSw40dwyCXxZsY1Duvv2t7ZUig6b71bH2qrltLNUeWomTZeVpQVpf4PtASzrB38iBcrHB2535lyEIzw27g_7w8MiyIqF1CuRs")',
+                backgroundImage: 'url("/icon.png")',
                 backgroundSize: "contain",
               }}
             ></div>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-90">
-              <span
-                className="text-primary/10 material-symbols-outlined"
-                style={{
-                  fontSize: "200px",
-                  fontVariationSettings: "'FILL' 1, 'wght' 200, 'GRAD' 0, 'opsz' 48",
-                }}
-              >
-                cloud
-              </span>
-            </div>
           </div>
 
           <div className="w-full flex flex-col gap-4 items-center mt-auto mb-8">
@@ -159,14 +146,14 @@ export default function LoginPage() {
                   disabled={isDebugLoading}
                   className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isDebugLoading ? 'Logging in...' : 'Guest Login (Test Account 1)'}
+                  {isDebugLoading ? 'Logging in...' : 'Guest Login 1'}
                 </button>
                 <button
                   onClick={handleDebugLogin2}
                   disabled={isDebugLoading}
                   className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isDebugLoading ? 'Logging in...' : 'Guest Login (Test Account 2)'}
+                  {isDebugLoading ? 'Logging in...' : 'Guest Login 2'}
                 </button>
               </div>
             )}

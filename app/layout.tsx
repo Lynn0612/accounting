@@ -5,8 +5,11 @@ import { QueryProvider } from "@/components/QueryProvider";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export const metadata: Metadata = {
-  title: "Warikan",
-  description: "Split bills, keep friends.",
+  title: "bookkeeping",
+  description: "Financial Freedom",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({
