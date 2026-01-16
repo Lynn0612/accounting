@@ -44,10 +44,13 @@ function LoginPageContent() {
         console.error('Guest Login 1 Error:', error.message);
         setAlertMessage('Guest Login 1 Failed. Please try again or use LINE Login.');
         setShowAlertModal(true);
-      } else {
+      } else if (data?.user) {
         console.log('Guest Login 1 Successful:', data.user.id);
         // 登入成功後執行與 LINE 登入相同的跳轉邏輯
         window.location.replace('/');
+      } else {
+        setAlertMessage('Login failed. Please try again.');
+        setShowAlertModal(true);
       }
     } catch (err) {
       console.error('Guest Login 1 Exception:', err);
@@ -76,7 +79,7 @@ function LoginPageContent() {
         console.error('Guest Login 2 Error:', error.message);
         setAlertMessage('Guest Login 2 Failed. Please try again or use LINE Login.');
         setShowAlertModal(true);
-      } else {
+      } else if (data?.user) {
         console.log('Guest Login 2 Successful:', data.user.id);
         
         // Update profile full_name to "2 Test" for Guest Login 2
@@ -97,6 +100,9 @@ function LoginPageContent() {
         }
         
         window.location.replace('/');
+      } else {
+        setAlertMessage('Login failed. Please try again.');
+        setShowAlertModal(true);
       }
     } catch (err) {
       console.error('Guest Login 2 Exception:', err);
