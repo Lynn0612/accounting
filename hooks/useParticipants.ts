@@ -15,9 +15,9 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
   // Use regular query instead of .single() to avoid 406 errors when RLS blocks access
   const [ledgerCheck, bookCheck] = await Promise.all([
     supabase
-      .from('ledgers')
-      .select('id')
-      .eq('id', ledgerId)
+    .from('ledgers')
+    .select('id')
+    .eq('id', ledgerId)
       .limit(1),
     supabase
       .from('account_books')
@@ -61,7 +61,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
 
     const membersList: Participant[] = []
     const currentUserProfile = profileMap.get(currentUserId)
-
+    
     // Add current user first
     membersList.push({
       id: currentUserId,
@@ -78,16 +78,16 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
           const fullName = profile.full_name || 'Unknown'
           // Filter: only show "2 Test", exclude "Unknown" and "3 test"
           if (fullName === '2 Test' || (fullName !== 'Unknown' && fullName !== '3 test' && fullName !== '3 Test')) {
-            membersList.push({
+          membersList.push({
               id: userId,
               name: fullName,
-              avatar: profile.avatar_url || undefined,
-              isPayer: false,
-            })
+            avatar: profile.avatar_url || undefined,
+            isPayer: false,
+          })
           }
         }
-      }
-    })
+        }
+      })
 
     return membersList
   } else if (isBook) {
@@ -122,7 +122,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
 
     const membersList: Participant[] = []
     const currentUserProfile = profileMap.get(currentUserId)
-
+    
     // Add current user first
     membersList.push({
       id: currentUserId,
@@ -139,16 +139,16 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
           const fullName = profile.full_name || 'Unknown'
           // Filter: only show "2 Test", exclude "Unknown" and "3 test"
           if (fullName === '2 Test' || (fullName !== 'Unknown' && fullName !== '3 test' && fullName !== '3 Test')) {
-            membersList.push({
+          membersList.push({
               id: userId,
               name: fullName,
-              avatar: profile.avatar_url || undefined,
-              isPayer: false,
-            })
+            avatar: profile.avatar_url || undefined,
+            isPayer: false,
+          })
           }
         }
-      }
-    })
+        }
+      })
 
     return membersList
   }
