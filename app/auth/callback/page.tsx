@@ -169,7 +169,8 @@ export default function AuthCallbackPage() {
         }
 
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-        const redirectUri = `${siteUrl}/auth/callback`;
+        // 確保 redirect_uri 與 LINE Developers Console 中註冊的完全一致（移除尾部斜線）
+        const redirectUri = `${siteUrl.replace(/\/$/, '')}/auth/callback`;
 
         // 1️⃣ 呼叫 Edge Function 並傳入 code 和 redirect_uri
         // Edge Function 會使用 LINE_CHANNEL_SECRET 交換 id_token
@@ -250,12 +251,26 @@ export default function AuthCallbackPage() {
           // 等待一下確保 cookie 已設置並同步到服務器
           await new Promise(resolve => setTimeout(resolve, 500));
           
+          // 驗證 cookie 是否已正確設置（再次檢查）
+          const cookiesAfterWait = document.cookie.split(';');
+          const authCookieAfterWait = cookiesAfterWait.find(cookie => cookie.trim().startsWith(expectedCookieName));
+          
+          console.log('[Callback] Final cookie check:', {
+            cookieName: expectedCookieName,
+            cookieExists: !!authCookieAfterWait,
+            cookieValue: authCookieAfterWait ? authCookieAfterWait.substring(expectedCookieName.length + 1).substring(0, 50) + '...' : 'N/A'
+          });
+          
+          if (!authCookieAfterWait) {
+            console.warn('[Callback] Cookie not found after setSession, retrying...');
+            // 如果 cookie 還沒設置，再等待一下
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
           console.log('[Callback] Session and cookie set, redirecting to home page...');
           // Session 設置完成才跳轉
           // 使用 replace 確保不會留下一堆 callback 歷史紀錄
           // middleware 會檢查 Cookie，所以即使 getUser() 失敗也能通過
-          // 等待額外時間確保 cookie 完全同步
-          await new Promise(resolve => setTimeout(resolve, 300));
           const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
           window.location.replace(siteUrl + '/');
           return;

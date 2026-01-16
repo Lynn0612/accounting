@@ -18,10 +18,26 @@ export default function LineLoginButton({ className = "" }: LineLoginButtonProps
 
       const clientId = process.env.NEXT_PUBLIC_LINE_CHANNEL_ID;
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-      const redirectUri = `${siteUrl}/auth/callback`;
+      // 確保 redirect_uri 與 LINE Developers Console 中註冊的完全一致（移除尾部斜線）
+      const redirectUri = `${siteUrl.replace(/\/$/, '')}/auth/callback`;
+
+      // 調試日誌
+      console.log('[LINE Login] Redirect URI:', redirectUri);
+      console.log('[LINE Login] Site URL:', siteUrl);
+      console.log('[LINE Login] Window origin:', window.location.origin);
 
       if (!clientId) {
         setErrorMessage("LINE_CHANNEL_ID 未設置。請在 .env.local 文件中設置 NEXT_PUBLIC_LINE_CHANNEL_ID");
+        setShowErrorModal(true);
+        setLoading(false);
+        return;
+      }
+
+      // 檢查是否在開發環境使用 localhost
+      if (redirectUri.includes('localhost') || redirectUri.includes('127.0.0.1')) {
+        const errorMsg = `開發環境檢測到 localhost。請確保在 LINE Developers Console 中已註冊此 Callback URL：\n\n${redirectUri}\n\n或者設置 NEXT_PUBLIC_SITE_URL 為生產環境 URL（例如：https://accounting-roan.vercel.app）`;
+        console.error('[LINE Login]', errorMsg);
+        setErrorMessage(errorMsg);
         setShowErrorModal(true);
         setLoading(false);
         return;
@@ -39,6 +55,7 @@ export default function LineLoginButton({ className = "" }: LineLoginButtonProps
       });
 
       const authUrl = `https://access.line.me/oauth2/v2.1/authorize?${params.toString()}`;
+      console.log('[LINE Login] Redirecting to:', authUrl);
       window.location.href = authUrl;
     } catch (error) {
       console.error("Error initiating LINE login:", error);
@@ -74,9 +91,9 @@ export default function LineLoginButton({ className = "" }: LineLoginButtonProps
                 d="M6.92 13.525H5.253a.352.352 0 01-.353-.352V7.12a.352.352 0 01.353-.352h.176c.195 0 .353.158.353.352v5.353h1.138c.195 0 .353.158.353.353v.352a.352.352 0 01-.353.347zm2.46-.352a.352.352 0 01-.353.352h-.176a.352.352 0 01-.353-.352V7.12a.352.352 0 01.353-.352h.176c.195 0 .353.158.353.352v6.053zm5.053 0a.352.352 0 01-.322.35l-.147.002h-.144a.434.434 0 01-.34-.17l-2.03-2.735v2.553a.352.352 0 01-.353.352h-.176a.352.352 0 01-.353-.352V7.12a.352.352 0 01.319-.35h.147h.147a.432.432 0 01.334.167l2.035 2.741V7.12a.352.352 0 01.353-.352h.176a.352.352 0 01.353.352v6.053zm3.76-2.527h-1.138v1.127h1.138c.195 0 .353.158.353.353v.352a.352.352 0 01-.353.352h-1.666a.352.352 0 01-.353-.352V7.12a.352.352 0 01.353-.352h1.666c.195 0 .353.158.353.352v.353a.352.352 0 01-.353.352h-1.138V9.2h1.138c.195 0 .353.158.353.353v.352a.352.352 0 01-.353.352z"
                 fill="#06C755"
                 stroke="#06C755"
-                stroke-width="0.3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+                strokeWidth="0.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </svg>
             <span>Log in with LINE</span>

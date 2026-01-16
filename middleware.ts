@@ -58,9 +58,22 @@ export async function middleware(request: NextRequest) {
               headers: request.headers,
             },
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
+          cookiesToSet.forEach(({ name, value, options }) => {
+            // 確保 auth cookie 設置為持久化（30天）
+            // 在 LIFF 環境中，使用 'none' 以確保跨域 cookie 正常工作
+            if (name.includes('auth-token')) {
+              response.cookies.set(name, value, {
+                ...options,
+                maxAge: 60 * 60 * 24 * 30, // 30 days
+                sameSite: isFromLIFF ? 'none' as const : 'lax' as const, // LIFF 需要 'none'
+                secure: true, // 'none' 需要 secure，且 HTTPS 環境必須使用
+                httpOnly: false, // 需要讓客戶端也能訪問
+                path: '/',
+              })
+            } else {
+              response.cookies.set(name, value, options)
+            }
+          })
         },
       },
     }
