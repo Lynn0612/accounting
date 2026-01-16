@@ -17,7 +17,8 @@ export default function LineLoginButton({ className = "" }: LineLoginButtonProps
       setLoading(true);
 
       const clientId = process.env.NEXT_PUBLIC_LINE_CHANNEL_ID;
-      const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`;
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      const redirectUri = `${siteUrl}/auth/callback`;
 
       if (!clientId) {
         setErrorMessage("LINE_CHANNEL_ID 未設置。請在 .env.local 文件中設置 NEXT_PUBLIC_LINE_CHANNEL_ID");

@@ -52,7 +52,7 @@ const HomePageClient = memo(function HomePageClient({
 
   // Get current month date range for total income/expenses - memoize to avoid recalculation
   const { startOfMonth, endOfMonth } = useMemo(() => {
-    const now = new Date();
+  const now = new Date();
     return {
       startOfMonth: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
       endOfMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString(),
@@ -88,8 +88,8 @@ const HomePageClient = memo(function HomePageClient({
       }
       
       return {
-        ...tx,
-        isSettlement: false,
+      ...tx,
+      isSettlement: false,
         sortDate: new Date(tx.created_at), // 以記帳時間排序
         formattedDate, // Pre-computed formatted date
         payerText: tx.payerText || payerText, // Pre-computed payer text
@@ -139,13 +139,13 @@ const HomePageClient = memo(function HomePageClient({
   // Real-time calculation for Total Balance (個人餘額：個人的分帳收入 - 個人的分帳支出)
   // Memoize calculations to avoid unnecessary recalculations
   const { totalIncome, totalExpenses } = useMemo(() => {
-    const transactionsToUse = monthlyTransactions || [];
+  const transactionsToUse = monthlyTransactions || [];
     return {
       totalIncome: transactionsToUse
         .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true && tx.income_mode !== 'deposit') // 排除還款和儲值金
         .reduce((sum, tx) => sum + Number(tx.amount), 0),
       totalExpenses: transactionsToUse
-        .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')
+    .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')
         .reduce((sum, tx) => sum + Number(tx.amount), 0),
     };
   }, [monthlyTransactions]);
@@ -156,7 +156,7 @@ const HomePageClient = memo(function HomePageClient({
     const expenses = monthlyTransactions ? totalExpenses : initialExpenses;
     const percentage = monthlyTransactions 
       ? (income > 0 ? Math.min(100, Math.max(0, Math.round((expenses / income) * 100))) : 0)
-      : initialPercentage;
+    : initialPercentage;
     return { displayIncome: income, displayExpenses: expenses, displayPercentage: percentage };
   }, [monthlyTransactions, totalIncome, totalExpenses, initialIncome, initialExpenses, initialPercentage]);
 

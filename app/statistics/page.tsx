@@ -486,7 +486,7 @@ export default function StatisticsPage() {
                   <div className="flex flex-col">
                     <span className="text-xs text-text-secondary font-medium leading-none mb-1">{cat.name}</span>
                     <div className="flex items-center gap-1">
-                      <span className="text-sm font-bold text-text-main leading-none">{cat.percentage.toFixed(0)}%</span>
+                    <span className="text-sm font-bold text-text-main leading-none">{cat.percentage.toFixed(0)}%</span>
                       {cat.isDeposit && (
                         <span className="text-[9px] text-primary font-semibold bg-primary/10 px-1 rounded">Deposit</span>
                       )}
@@ -560,9 +560,9 @@ export default function StatisticsPage() {
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-text-main text-sm">{cat.name}</span>
                         <div className="flex flex-col items-end">
-                          <span className="font-bold text-text-main text-sm">
-                            {formatAmountSimple(cat.amount)}
-                          </span>
+                        <span className="font-bold text-text-main text-sm">
+                          {formatAmountSimple(cat.amount)}
+                        </span>
                           {cat.isDeposit && (
                             <span className="text-[10px] text-primary font-semibold">Deposit</span>
                           )}

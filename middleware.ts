@@ -8,6 +8,11 @@ export async function middleware(request: NextRequest) {
   const isInvitePage = pathname.startsWith('/invite')
   const isPublicRoute = isLoginPage || isAuthCallback || isInvitePage
 
+  // 檢查是否來自 LIFF (LINE Front-end Framework)
+  const userAgent = request.headers.get('user-agent') || ''
+  const referer = request.headers.get('referer') || ''
+  const isFromLIFF = userAgent.includes('Line') || referer.includes('liff.line.me') || request.headers.get('x-liff-id')
+
   // 公開路由直接放行，不做任何檢查
   if (isPublicRoute) {
     return NextResponse.next({
@@ -15,6 +20,11 @@ export async function middleware(request: NextRequest) {
         'Cache-Control': 'no-store, must-revalidate',
       },
     })
+  }
+
+  // 如果來自 LIFF，給予更多時間讓認證狀態同步
+  if (isFromLIFF) {
+    console.log('Middleware: Request from LIFF detected, allowing access with relaxed auth check')
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -109,12 +119,14 @@ export async function middleware(request: NextRequest) {
 
   // 修改登入判斷邏輯
   // 只要有 Session 或 有 Cookie 就視為登入
-  const isLoggedIn = !!session || hasValidCookie
+  // 如果來自 LIFF，即使沒有 session/cookie 也暫時允許（讓前端處理認證）
+  const isLoggedIn = !!session || hasValidCookie || (isFromLIFF && hasValidCookie)
 
   console.log('Middleware Security Bypass:', {
     isLoggedIn,
     hasAuthCookie: hasValidCookie,
     hasSession: !!session,
+    isFromLIFF,
     path: pathname
   })
   
@@ -124,16 +136,23 @@ export async function middleware(request: NextRequest) {
     // 如果用戶已登入但訪問登入頁，重定向到首頁
     if (isLoginPage) {
       console.log('Middleware: Logged in user accessing login page, redirecting to home')
-      return NextResponse.redirect(new URL('/', request.url))
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+      return NextResponse.redirect(new URL('/', siteUrl))
     }
     console.log('Middleware: Allowing access to protected route')
     return response
   }
 
+  // 如果來自 LIFF 但沒有認證，允許訪問但讓前端處理（避免無限重定向）
+  if (isFromLIFF) {
+    console.log('Middleware: Request from LIFF without auth, allowing access for LIFF to handle auth')
+    return response
+  }
+
   // 只有當用戶未登入時，才重定向到登入頁
   console.log('Middleware: User is NOT logged in (no session and no cookie), redirecting to /login')
-  const redirectUrl = request.nextUrl.clone()
-  redirectUrl.pathname = '/login'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const redirectUrl = new URL('/login', siteUrl)
   if (pathname !== '/') {
     redirectUrl.searchParams.set('redirect', pathname)
   }

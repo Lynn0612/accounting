@@ -2030,9 +2030,9 @@ export default function EditTransactionPage() {
                 }}
                 className={`flex items-center justify-between ${payerId !== DEPOSIT_PAYER_ID ? 'mb-5 border-b border-gray-100 pb-5' : ''} cursor-pointer`}
               >
-                  <span className="text-sm font-bold text-[#657486] tracking-wide">
+                <span className="text-sm font-bold text-[#657486] tracking-wide">
                   Payer
-                  </span>
+                </span>
                 <div className="flex items-center gap-2">
                   {(() => {
                     const p = expensePayerOptions().find((x) => x.id === payerId)
@@ -2060,7 +2060,7 @@ export default function EditTransactionPage() {
               {payerId !== DEPOSIT_PAYER_ID && (
                 <>
               <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
-              Split with
+                Split with
               </label>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex -space-x-3 overflow-hidden p-1">
@@ -2141,32 +2141,32 @@ export default function EditTransactionPage() {
 
               {/* Shared expense (public expense) - same UI as /add */}
               {isMultiMemberLedger && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                      <span className="material-symbols-outlined">groups</span>
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-text-main">Shared expense</h4>
-                    </div>
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <span className="material-symbols-outlined">groups</span>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isPublicExpense}
-                      onChange={(e) => setIsPublicExpense(e.target.checked)}
-                      className="sr-only peer"
-                    />
-                    <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                  </label>
+                  <div>
+                    <h4 className="font-semibold text-text-main">Shared expense</h4>
+                  </div>
                 </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isPublicExpense}
+                    onChange={(e) => setIsPublicExpense(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
               )}
 
               {isPublicExpense && isMultiMemberLedger && (
                 <div className="mt-4 pt-4 border-t border-gray-100">
-                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-                Shared expense Amount ($)
-                </label>
+                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
+                    Shared expense Amount ($)
+                  </label>
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2180,7 +2180,7 @@ export default function EditTransactionPage() {
                         const n = parseFloat(next)
                         if (isNaN(n)) {
                           if (/^[0-9]*\.?[0-9]*$/.test(next)) {
-                            setPublicAmount(next)
+                          setPublicAmount(next)
                           }
                         } else if (total > 0) {
                           setPublicAmount(next)
@@ -2222,7 +2222,7 @@ export default function EditTransactionPage() {
 
                   <div className="mt-4">
                     <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
-                    Shared with (Shared expense)
+                      Shared with (Shared expense)
                     </label>
                     <div className="flex items-center justify-between">
                       <div className="flex -space-x-3 overflow-hidden p-1">

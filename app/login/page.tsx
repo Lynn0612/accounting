@@ -47,7 +47,10 @@ function LoginPageContent() {
       } else if (data?.user) {
         console.log('Guest Login 1 Successful:', data.user.id);
         // 登入成功後執行與 LINE 登入相同的跳轉邏輯
-        window.location.replace('/');
+        // 等待確保 cookie 已保存並同步
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        window.location.replace(siteUrl + '/');
       } else {
         setAlertMessage('Login failed. Please try again.');
         setShowAlertModal(true);
@@ -99,7 +102,10 @@ function LoginPageContent() {
           console.log('Profile updated to "2 Test"');
         }
         
-        window.location.replace('/');
+        // 等待確保 cookie 已保存並同步
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        window.location.replace(siteUrl + '/');
       } else {
         setAlertMessage('Login failed. Please try again.');
         setShowAlertModal(true);

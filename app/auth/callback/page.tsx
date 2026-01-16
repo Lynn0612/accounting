@@ -109,7 +109,10 @@ export default function AuthCallbackPage() {
             
             // 使用 replace 確保不會留下一堆 callback 歷史紀錄
             console.log("Login successful, redirecting...");
-            window.location.replace('/');
+            // 等待額外時間確保 cookie 完全同步
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+            window.location.replace(siteUrl + '/');
             return;
           } else {
             console.warn('[Callback] Hash fragment found but no access_token');
@@ -165,7 +168,8 @@ export default function AuthCallbackPage() {
           console.warn('[Callback] State received but not found in sessionStorage');
         }
 
-        const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || window.location.origin}/auth/callback`;
+        const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        const redirectUri = `${siteUrl}/auth/callback`;
 
         // 1️⃣ 呼叫 Edge Function 並傳入 code 和 redirect_uri
         // Edge Function 會使用 LINE_CHANNEL_SECRET 交換 id_token
@@ -250,7 +254,10 @@ export default function AuthCallbackPage() {
           // Session 設置完成才跳轉
           // 使用 replace 確保不會留下一堆 callback 歷史紀錄
           // middleware 會檢查 Cookie，所以即使 getUser() 失敗也能通過
-          window.location.replace('/');
+          // 等待額外時間確保 cookie 完全同步
+          await new Promise(resolve => setTimeout(resolve, 300));
+          const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+          window.location.replace(siteUrl + '/');
           return;
         } else {
           console.error('[Callback] No access_token:', data);
@@ -282,7 +289,8 @@ export default function AuthCallbackPage() {
           <p className="text-text-muted mb-6 break-words">{error}</p>
           <button
             onClick={() => {
-              window.location.href = '/login';
+              const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+              window.location.href = siteUrl + '/login';
             }}
             className="inline-block px-6 py-3 bg-primary text-white rounded-full font-semibold hover:bg-primary/90 transition-colors"
           >
