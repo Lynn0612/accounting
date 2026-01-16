@@ -18,13 +18,56 @@ function LoginPageContent() {
   useEffect(() => {
     const checkSessionAndRedirect = async () => {
       try {
-        // 檢查是否已有 Supabase session
+        // 先嘗試獲取 session（會自動刷新過期的 session）
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
           console.log('[Login] Session check error:', sessionError.message);
+          // 即使有錯誤，也嘗試使用 getUser 檢查（可能會自動刷新）
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            console.log('[Login] User found via getUser, session may have been refreshed');
+            // 重新獲取 session
+            const { data: { session: refreshedSession } } = await supabase.auth.getSession();
+            if (refreshedSession?.user) {
+              // Session 已刷新，繼續重定向流程
+              const returnTo = searchParams.get('returnTo');
+              const destination = searchParams.get('destination');
+              const redirect = searchParams.get('redirect');
+              const targetPath = returnTo || destination || redirect || '/';
+              const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+              router.replace(targetPath.startsWith('http') ? targetPath : siteUrl + targetPath);
+              return;
+            }
+          }
           setIsCheckingSession(false);
           return;
+        }
+
+        // 檢查 session 是否過期，如果過期但 refresh token 存在，嘗試刷新
+        if (session) {
+          const now = Math.floor(Date.now() / 1000);
+          const expiresAt = session.expires_at || 0;
+          const isExpired = expiresAt < now;
+
+          if (isExpired && session.refresh_token) {
+            console.log('[Login] Session expired, attempting to refresh...');
+            const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+            
+            if (refreshError) {
+              console.error('[Login] Failed to refresh session:', refreshError);
+              setIsCheckingSession(false);
+              return;
+            }
+
+            if (refreshedSession?.user) {
+              console.log('[Login] Session refreshed successfully');
+              // 繼續重定向流程
+            } else {
+              setIsCheckingSession(false);
+              return;
+            }
+          }
         }
 
         if (session?.user) {

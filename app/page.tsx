@@ -40,7 +40,9 @@ async function getDashboardData() {
   }
 
   if (!userId) {
-    redirect("/login");
+    // 如果沒有用戶 ID，重定向到登入頁
+    // 使用相對路徑，讓 middleware 處理完整的 URL
+    redirect("/login?redirect=/");
   }
 
   // Get first ledger user is member of and fetch transactions in one query using join

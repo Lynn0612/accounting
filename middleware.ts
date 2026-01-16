@@ -58,9 +58,22 @@ export async function middleware(request: NextRequest) {
               headers: request.headers,
             },
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
+          cookiesToSet.forEach(({ name, value, options }) => {
+            // 確保 auth cookie 設置為持久化（30天）
+            // 在 LIFF 環境中，使用 'none' 以確保跨域 cookie 正常工作
+            if (name.includes('auth-token')) {
+              response.cookies.set(name, value, {
+                ...options,
+                maxAge: 60 * 60 * 24 * 30, // 30 days
+                sameSite: isFromLIFF ? 'none' as const : 'lax' as const, // LIFF 需要 'none'
+                secure: true, // 'none' 需要 secure，且 HTTPS 環境必須使用
+                httpOnly: false, // 需要讓客戶端也能訪問
+                path: '/',
+              })
+            } else {
+              response.cookies.set(name, value, options)
+            }
+          })
         },
       },
     }
@@ -85,7 +98,22 @@ export async function middleware(request: NextRequest) {
   // 只要有 Cookie，我們就暫時相信他是登入的 (因為你的 page.tsx 已經驗證過了)
   const hasValidCookie = !!authCookie
 
-  // 獲取 user (使用 getUser 而不是 getSession，更可靠)
+  // 獲取 session（會自動刷新過期的 session）
+  const {
+    data: { session },
+    error: sessionError
+  } = await supabase.auth.getSession()
+  
+  // 如果 session 錯誤，記錄詳細信息（但不立即失敗，因為可能是自定義 JWT）
+  if (sessionError) {
+    console.error('Middleware Session Error:', {
+      message: sessionError.message,
+      status: sessionError.status,
+      name: sessionError.name
+    })
+  }
+
+  // 獲取 user (使用 getUser 驗證用戶，會自動刷新過期的 session)
   const {
     data: { user },
     error: userError
@@ -99,12 +127,6 @@ export async function middleware(request: NextRequest) {
       name: userError.name
     })
   }
-
-  // 也嘗試獲取 session 作為備用檢查
-  const {
-    data: { session },
-    error: sessionError
-  } = await supabase.auth.getSession()
 
   // Debug: 記錄 Supabase user 和 session
   console.log('Middleware Supabase auth:', {
@@ -124,9 +146,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // 修改登入判斷邏輯
-  // 只要有 User 或 Session 或 Cookie 就視為登入
-  // 如果來自 LIFF，即使沒有認證也暫時允許（讓前端處理認證，避免無限重定向）
-  const isLoggedIn = !!user || !!session || hasValidCookie
+  // 優先使用 user（最可靠），其次是 session，最後是 cookie
+  // 只有當有有效的 user 或 session 時才視為登入
+  // Cookie 單獨存在不足以證明登入（可能已過期）
+  const isLoggedIn = !!user || !!session
 
   console.log('Middleware Security Check:', {
     isLoggedIn,
@@ -134,7 +157,9 @@ export async function middleware(request: NextRequest) {
     hasAuthCookie: hasValidCookie,
     hasSession: !!session,
     isFromLIFF,
-    path: pathname
+    path: pathname,
+    userError: userError?.message,
+    sessionError: sessionError?.message
   })
   
   // 如果用戶已登入，確保不重定向到 /login
@@ -150,14 +175,8 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // 如果來自 LIFF 但沒有認證，允許訪問但讓前端處理（避免無限重定向循環）
-  // 這樣 LIFF 可以初始化並處理認證，而不會被 middleware 重定向
-  if (isFromLIFF) {
-    console.log('Middleware: Request from LIFF without auth, allowing access for LIFF to handle auth')
-    return response
-  }
-
-  // 只有當用戶未登入且不是來自 LIFF 時，才重定向到登入頁
+  // 如果來自 LIFF 但沒有認證，仍然重定向到登入頁（但保留原始路徑）
+  // 登入頁會檢查 session 並自動重定向，避免無限循環
   console.log('Middleware: User is NOT logged in (no user/session/cookie), redirecting to /login')
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
   const redirectUrl = new URL('/login', siteUrl)
@@ -175,6 +194,11 @@ export async function middleware(request: NextRequest) {
     } else {
       redirectUrl.searchParams.set('redirect', pathname)
     }
+  }
+  
+  // 如果是來自 LIFF，記錄以便調試
+  if (isFromLIFF) {
+    console.log('Middleware: LIFF request without auth, redirecting to /login with path:', pathname)
   }
   
   return NextResponse.redirect(redirectUrl)
