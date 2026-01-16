@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import DateRangePicker from '@/components/DateRangePicker'
@@ -28,7 +28,7 @@ interface CategoryComparison {
   color: string
 }
 
-export default function ComparePage() {
+function ComparePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
@@ -577,6 +577,14 @@ export default function ComparePage() {
         />
       )}
     </div>
+  )
+}
+
+export default function ComparePage() {
+  return (
+    <Suspense fallback={<Loading fullScreen message="載入中..." size="lg" />}>
+      <ComparePageContent />
+    </Suspense>
   )
 }
 

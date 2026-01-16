@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic';
+
 function getYahooSymbol(symbol: string, exchange: string): string {
   if (exchange === 'TWSE') {
     return `${symbol.padStart(4, '0')}.TW`

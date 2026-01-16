@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import LineLoginButton from "@/components/auth/LineLoginButton";
 import { createClient } from "@/lib/supabase/client";
 import ConfirmModal from "@/components/ConfirmModal";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const searchParams = useSearchParams();
   const supabase = createClient();
   const [isDebugLoading, setIsDebugLoading] = useState(false);
@@ -195,6 +195,14 @@ export default function LoginPage() {
         type="warning"
       />
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="fixed inset-0 flex items-center justify-center bg-background-light"><div>Loading...</div></div>}>
+      <LoginPageContent />
+    </Suspense>
   );
 }
 

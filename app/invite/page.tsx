@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useLedger } from "@/contexts/LedgerContext";
 import Loading from "@/components/Loading";
 
-export default function InvitePage() {
+function InvitePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const supabase = createClient();
@@ -152,5 +152,13 @@ export default function InvitePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function InvitePage() {
+  return (
+    <Suspense fallback={<Loading fullScreen message="載入中..." size="lg" />}>
+      <InvitePageContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { X, Edit3 } from "lucide-react";
 import NumericKeypad from "@/components/NumericKeypad";
@@ -26,7 +26,7 @@ interface Participant {
   isPayer?: boolean;
 }
 
-export default function AddTransactionPage() {
+function AddTransactionPageContent() {
   const DEPOSIT_PAYER_ID = '__DEPOSIT__'
   // ========== ALL HOOKS MUST BE CALLED FIRST ==========
   // Router and Supabase
@@ -2258,6 +2258,14 @@ export default function AddTransactionPage() {
       </div>
     </div>
     </>
+  );
+}
+
+export default function AddTransactionPage() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <AddTransactionPageContent />
+    </Suspense>
   );
 }
 
