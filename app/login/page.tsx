@@ -41,17 +41,17 @@ function LoginPageContent() {
       });
       
       if (error) {
-        console.error('Guest Login Error:', error.message);
-        setAlertMessage('Guest Login Failed, please confirm that the Supabase account has been created');
+        console.error('Guest Login 1 Error:', error.message);
+        setAlertMessage('Guest Login 1 Failed. Please try again or use LINE Login.');
         setShowAlertModal(true);
       } else {
-        console.log('Guest Login Successful:', data.user.id);
+        console.log('Guest Login 1 Successful:', data.user.id);
         // 登入成功後執行與 LINE 登入相同的跳轉邏輯
         window.location.replace('/');
       }
     } catch (err) {
-      console.error('Guest Login Exception:', err);
-      setAlertMessage('Guest Login Error');
+      console.error('Guest Login 1 Exception:', err);
+      setAlertMessage('Login failed. Please try again.');
       setShowAlertModal(true);
     } finally {
       setIsDebugLoading(false);
@@ -65,7 +65,7 @@ function LoginPageContent() {
       const password = process.env.NEXT_PUBLIC_DEBUG_USER2_PASSWORD;
 
       if (!email || !password) {
-        setAlertMessage('Please set NEXT_PUBLIC_DEBUG_USER2_EMAIL and NEXT_PUBLIC_DEBUG_USER2_PASSWORD in .env.local');
+        setAlertMessage('Guest Login 2 is not configured. Please use Guest Login 1 or LINE Login.');
         setShowAlertModal(true);
         return;
       }
@@ -73,11 +73,11 @@ function LoginPageContent() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        console.error('Guest Login2 Error:', error.message);
-        setAlertMessage('Guest Login2 Failed, please confirm that the Supabase account has been created');
+        console.error('Guest Login 2 Error:', error.message);
+        setAlertMessage('Guest Login 2 Failed. Please try again or use LINE Login.');
         setShowAlertModal(true);
       } else {
-        console.log('Guest Login2 Successful:', data.user.id);
+        console.log('Guest Login 2 Successful:', data.user.id);
         
         // Update profile full_name to "2 Test" for Guest Login 2
         const { error: profileError } = await supabase
@@ -99,8 +99,8 @@ function LoginPageContent() {
         window.location.replace('/');
       }
     } catch (err) {
-      console.error('Guest Login2 Exception:', err);
-      setAlertMessage('Guest Login2 Error');
+      console.error('Guest Login 2 Exception:', err);
+      setAlertMessage('Login failed. Please try again.');
       setShowAlertModal(true);
     } finally {
       setIsDebugLoading(false);
@@ -139,24 +139,22 @@ function LoginPageContent() {
               </div>
             )}
             <LineLoginButton />
-            {process.env.NODE_ENV === 'development' && (
-              <div className="w-full max-w-[320px] flex flex-col gap-3">
-                <button
-                  onClick={handleDebugLogin}
-                  disabled={isDebugLoading}
-                  className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isDebugLoading ? 'Logging in...' : 'Guest Login 1'}
-                </button>
-                <button
-                  onClick={handleDebugLogin2}
-                  disabled={isDebugLoading}
-                  className="w-full px-6 py-3 bg-transparent border-2 border-gray-300 text-gray-600 rounded-full font-semibold hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isDebugLoading ? 'Logging in...' : 'Guest Login 2'}
-                </button>
-              </div>
-            )}
+            <div className="w-full max-w-[320px] flex flex-col gap-3">
+              <button
+                onClick={handleDebugLogin}
+                disabled={isDebugLoading}
+                className="w-full px-6 py-3 bg-white border-2 border-primary/20 text-primary rounded-full font-semibold hover:bg-primary/5 hover:border-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {isDebugLoading ? 'Logging in...' : 'Guest Login 1'}
+              </button>
+              <button
+                onClick={handleDebugLogin2}
+                disabled={isDebugLoading}
+                className="w-full px-6 py-3 bg-white border-2 border-primary/20 text-primary rounded-full font-semibold hover:bg-primary/5 hover:border-primary/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              >
+                {isDebugLoading ? 'Logging in...' : 'Guest Login 2'}
+              </button>
+            </div>
           </div>
         </div>
 
