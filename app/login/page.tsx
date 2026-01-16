@@ -1,17 +1,58 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import LineLoginButton from "@/components/auth/LineLoginButton";
 import { createClient } from "@/lib/supabase/client";
 import ConfirmModal from "@/components/ConfirmModal";
 
 function LoginPageContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const supabase = createClient();
   const [isDebugLoading, setIsDebugLoading] = useState(false);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+
+  useEffect(() => {
+    const checkSessionAndRedirect = async () => {
+      try {
+        // 檢查是否已有 Supabase session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.log('[Login] Session check error:', sessionError.message);
+          setIsCheckingSession(false);
+          return;
+        }
+
+        if (session?.user) {
+          console.log('[Login] Session exists, redirecting user');
+          
+          // 獲取重定向目標（優先順序：returnTo > destination > redirect > /）
+          const returnTo = searchParams.get('returnTo');
+          const destination = searchParams.get('destination');
+          const redirect = searchParams.get('redirect');
+          const targetPath = returnTo || destination || redirect || '/';
+          
+          console.log('[Login] Redirect target:', { returnTo, destination, redirect, targetPath });
+          
+          // 使用 router.replace 避免留下登入頁歷史記錄
+          const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+          router.replace(targetPath.startsWith('http') ? targetPath : siteUrl + targetPath);
+          return;
+        }
+
+        setIsCheckingSession(false);
+      } catch (error) {
+        console.error('[Login] Error checking session:', error);
+        setIsCheckingSession(false);
+      }
+    };
+
+    checkSessionAndRedirect();
+  }, [searchParams, router, supabase]);
 
   useEffect(() => {
     const inviteBookId = searchParams.get("invite_book_id");
@@ -32,6 +73,18 @@ function LoginPageContent() {
 
   const errorMessage = searchParams.get("error");
 
+  // 如果正在檢查 session，顯示載入狀態
+  if (isCheckingSession) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-background-light">
+        <div className="text-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-text-muted">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
   const handleDebugLogin = async () => {
     setIsDebugLoading(true);
     try {
@@ -49,8 +102,15 @@ function LoginPageContent() {
         // 登入成功後執行與 LINE 登入相同的跳轉邏輯
         // 等待確保 cookie 已保存並同步
         await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 獲取重定向目標（優先順序：returnTo > destination > redirect > /）
+        const returnTo = searchParams.get('returnTo');
+        const destination = searchParams.get('destination');
+        const redirect = searchParams.get('redirect');
+        const targetPath = returnTo || destination || redirect || '/';
+        
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-        window.location.replace(siteUrl + '/');
+        window.location.replace(targetPath.startsWith('http') ? targetPath : siteUrl + targetPath);
       } else {
         setAlertMessage('Login failed. Please try again.');
         setShowAlertModal(true);
@@ -104,8 +164,15 @@ function LoginPageContent() {
         
         // 等待確保 cookie 已保存並同步
         await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 獲取重定向目標（優先順序：returnTo > destination > redirect > /）
+        const returnTo = searchParams.get('returnTo');
+        const destination = searchParams.get('destination');
+        const redirect = searchParams.get('redirect');
+        const targetPath = returnTo || destination || redirect || '/';
+        
         const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-        window.location.replace(siteUrl + '/');
+        window.location.replace(targetPath.startsWith('http') ? targetPath : siteUrl + targetPath);
       } else {
         setAlertMessage('Login failed. Please try again.');
         setShowAlertModal(true);

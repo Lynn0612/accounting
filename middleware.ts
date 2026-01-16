@@ -85,45 +85,52 @@ export async function middleware(request: NextRequest) {
   // 只要有 Cookie，我們就暫時相信他是登入的 (因為你的 page.tsx 已經驗證過了)
   const hasValidCookie = !!authCookie
 
-  // 獲取 session (用於同步，但不強制要求)
+  // 獲取 user (使用 getUser 而不是 getSession，更可靠)
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser()
+  
+  // 如果 user 錯誤，記錄詳細信息（但不立即失敗，因為可能是自定義 JWT）
+  if (userError) {
+    console.error('Middleware User Error:', {
+      message: userError.message,
+      status: userError.status,
+      name: userError.name
+    })
+  }
+
+  // 也嘗試獲取 session 作為備用檢查
   const {
     data: { session },
     error: sessionError
   } = await supabase.auth.getSession()
-  
-  // 如果 session 錯誤，記錄詳細信息（但不立即失敗，因為可能是自定義 JWT）
-  if (sessionError) {
-    console.error('Middleware Session Error:', {
-      message: sessionError.message,
-      status: sessionError.status,
-      name: sessionError.name
-    })
-  }
 
-  // Debug: 記錄 Supabase session
-  console.log('Middleware Supabase session:', {
+  // Debug: 記錄 Supabase user 和 session
+  console.log('Middleware Supabase auth:', {
+    hasUser: !!user,
     hasSession: !!session,
+    userError: userError?.message,
     sessionError: sessionError?.message,
-    sessionUserId: session?.user?.id,
-    sessionUserEmail: session?.user?.email
+    userId: user?.id,
+    userEmail: user?.email
   })
   
-  if (session) {
-    console.log('Middleware Session Details:', {
-      access_token: session.access_token ? session.access_token.substring(0, 20) + '...' : 'N/A',
-      expires_at: session.expires_at,
-      user_id: session.user?.id,
-      user_email: session.user?.email
+  if (user) {
+    console.log('Middleware User Details:', {
+      user_id: user.id,
+      user_email: user.email
     })
   }
 
   // 修改登入判斷邏輯
-  // 只要有 Session 或 有 Cookie 就視為登入
-  // 如果來自 LIFF，即使沒有 session/cookie 也暫時允許（讓前端處理認證）
-  const isLoggedIn = !!session || hasValidCookie || (isFromLIFF && hasValidCookie)
+  // 只要有 User 或 Session 或 Cookie 就視為登入
+  // 如果來自 LIFF，即使沒有認證也暫時允許（讓前端處理認證，避免無限重定向）
+  const isLoggedIn = !!user || !!session || hasValidCookie
 
-  console.log('Middleware Security Bypass:', {
+  console.log('Middleware Security Check:', {
     isLoggedIn,
+    hasUser: !!user,
     hasAuthCookie: hasValidCookie,
     hasSession: !!session,
     isFromLIFF,
@@ -132,7 +139,7 @@ export async function middleware(request: NextRequest) {
   
   // 如果用戶已登入，確保不重定向到 /login
   if (isLoggedIn) {
-    console.log('Middleware: User is logged in (session or cookie exists), allowing access')
+    console.log('Middleware: User is logged in (user/session/cookie exists), allowing access')
     // 如果用戶已登入但訪問登入頁，重定向到首頁
     if (isLoginPage) {
       console.log('Middleware: Logged in user accessing login page, redirecting to home')
@@ -143,24 +150,46 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // 如果來自 LIFF 但沒有認證，允許訪問但讓前端處理（避免無限重定向）
+  // 如果來自 LIFF 但沒有認證，允許訪問但讓前端處理（避免無限重定向循環）
+  // 這樣 LIFF 可以初始化並處理認證，而不會被 middleware 重定向
   if (isFromLIFF) {
     console.log('Middleware: Request from LIFF without auth, allowing access for LIFF to handle auth')
     return response
   }
 
-  // 只有當用戶未登入時，才重定向到登入頁
-  console.log('Middleware: User is NOT logged in (no session and no cookie), redirecting to /login')
+  // 只有當用戶未登入且不是來自 LIFF 時，才重定向到登入頁
+  console.log('Middleware: User is NOT logged in (no user/session/cookie), redirecting to /login')
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
   const redirectUrl = new URL('/login', siteUrl)
+  
+  // 保留原始路徑作為重定向參數（支援多種參數名稱）
   if (pathname !== '/') {
-    redirectUrl.searchParams.set('redirect', pathname)
+    // 優先使用 returnTo，如果沒有則使用 redirect
+    const existingReturnTo = request.nextUrl.searchParams.get('returnTo')
+    const existingDestination = request.nextUrl.searchParams.get('destination')
+    
+    if (existingReturnTo) {
+      redirectUrl.searchParams.set('returnTo', existingReturnTo)
+    } else if (existingDestination) {
+      redirectUrl.searchParams.set('destination', existingDestination)
+    } else {
+      redirectUrl.searchParams.set('redirect', pathname)
+    }
   }
+  
   return NextResponse.redirect(redirectUrl)
 }
 
 export const config = {
   matcher: [
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public files (images, etc.)
+     * - /auth/callback and /login are explicitly included to ensure they are processed
+     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
