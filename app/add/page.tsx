@@ -35,6 +35,17 @@ function AddTransactionPageContent() {
   const supabase = createClient();
   const queryClient = useQueryClient();
   
+  // 追蹤是否為直接進入（在組件掛載時記錄）
+  const [isDirectAccess, setIsDirectAccess] = useState(false);
+  
+  useEffect(() => {
+    // 檢查是否為直接進入（沒有 referrer 或 referrer 不是當前網站的頁面）
+    const referrer = document.referrer;
+    const currentOrigin = window.location.origin;
+    const isDirect = !referrer || !referrer.startsWith(currentOrigin);
+    setIsDirectAccess(isDirect);
+  }, []);
+  
   // Context hooks
   const { activeLedger, setActiveLedger, ledgers, refreshLedgers } = useLedger();
   
@@ -1393,7 +1404,15 @@ function AddTransactionPageContent() {
       <div className="flex flex-col px-6 pt-8 pb-2 shrink-0 z-20">
         <div className="flex items-center justify-between mb-3">
           <button
-            onClick={() => router.back()}
+            onClick={() => {
+              if (isDirectAccess) {
+                // 直接進入，回到首頁
+                router.push('/');
+              } else {
+                // 從其他頁面進入，返回上一頁
+                router.back();
+              }
+            }}
             className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/50 hover:bg-white transition-all duration-200"
           >
             <X className="w-6 h-6 text-[#657486] dark:text-gray-400" />

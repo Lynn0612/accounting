@@ -86,7 +86,7 @@ export default function SettingsPage() {
       
       if (error) {
         console.error('Logout error:', error);
-        showAlert('Logout Failed', 'An error occurred while logging out. Please try again later.');
+        showAlert('logout failed', 'logout failed, please try again later');
         setIsLoggingOut(false);
         return;
       }
@@ -100,7 +100,7 @@ export default function SettingsPage() {
       window.location.href = `${siteUrl}/login`;
     } catch (error) {
       console.error('Logout exception:', error);
-      showAlert('Logout Failed', 'An error occurred while logging out. Please try again later.');
+      showAlert('logout failed', 'logout failed, please try again later');
       setIsLoggingOut(false);
     }
   };
@@ -412,13 +412,22 @@ export default function SettingsPage() {
   const handleDeleteBook = async () => {
     if (!selectedBook) return;
     
+    // 保存要刪除的帳本信息
+    const bookToDelete = selectedBook;
+    
+    // 等待約1秒後關閉彈窗，給用戶視覺反饋
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    setShowDeleteModal(false);
+    setSelectedBook(null);
+    
     try {
-      if (selectedBook.type === 'ledger') {
+      if (bookToDelete.type === 'ledger') {
         // Delete ledger
         const { error } = await supabase
           .from('ledgers')
           .delete()
-          .eq('id', selectedBook.id);
+          .eq('id', bookToDelete.id);
 
         if (error) throw error;
       } else {
@@ -426,14 +435,14 @@ export default function SettingsPage() {
         const { error } = await supabase
           .from('account_books')
           .delete()
-          .eq('id', selectedBook.id);
+          .eq('id', bookToDelete.id);
 
         if (error) throw error;
       }
 
       // If deleted book was active, set next one as active
-      const wasActive = activeLedger?.id === selectedBook.id;
-      const remainingBooks = allBooks.filter(b => b.id !== selectedBook.id);
+      const wasActive = activeLedger?.id === bookToDelete.id;
+      const remainingBooks = allBooks.filter(b => b.id !== bookToDelete.id);
       
       if (wasActive && remainingBooks.length > 0) {
         setActiveLedger(remainingBooks[0]);
@@ -521,9 +530,6 @@ export default function SettingsPage() {
           }
         }
       }
-      
-      setShowDeleteModal(false);
-      setSelectedBook(null);
     } catch (error) {
       console.error('Error deleting book:', error);
       showAlert('error', 'delete book failed, please try again');
@@ -1980,10 +1986,10 @@ export default function SettingsPage() {
         isOpen={showLogoutModal}
         onClose={() => setShowLogoutModal(false)}
         onConfirm={handleLogout}
-        title="確認登出"
-        message="確定要登出嗎？"
-        confirmText="登出"
-        cancelText="取消"
+        title="Confirm Logout"
+        message="Are you sure you want to logout?"
+        confirmText="Logout"
+        cancelText="Cancel"
         type="warning"
         isLoading={isLoggingOut}
       />
@@ -1994,7 +2000,7 @@ export default function SettingsPage() {
         onConfirm={() => setShowAlertModal(false)}
         title={alertTitle}
         message={alertMessage}
-        confirmText="確定"
+        confirmText="Confirm"
         cancelText=""
         type="warning"
       />
