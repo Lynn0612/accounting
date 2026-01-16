@@ -64,6 +64,8 @@ export default function SettingsPage() {
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const [alertTitle, setAlertTitle] = useState("");
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const router = useRouter();
   const supabase = createClient();
   const { ledgers, activeLedger, setActiveLedger, refreshLedgers } = useLedger();
@@ -73,6 +75,34 @@ export default function SettingsPage() {
     setAlertTitle(title);
     setAlertMessage(message);
     setShowAlertModal(true);
+  };
+
+  // Logout function
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // Sign out from Supabase
+      const { error } = await supabase.auth.signOut();
+      
+      if (error) {
+        console.error('Logout error:', error);
+        showAlert('Logout Failed', 'An error occurred while logging out. Please try again later.');
+        setIsLoggingOut(false);
+        return;
+      }
+
+      // Clear any local storage or session storage if needed
+      sessionStorage.clear();
+      localStorage.clear();
+
+      // Redirect to login page
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      window.location.href = `${siteUrl}/login`;
+    } catch (error) {
+      console.error('Logout exception:', error);
+      showAlert('Logout Failed', 'An error occurred while logging out. Please try again later.');
+      setIsLoggingOut(false);
+    }
   };
 
   const loadingRef = useRef(false);
@@ -1250,10 +1280,20 @@ export default function SettingsPage() {
 
   return (
     <div className="relative min-h-screen w-full flex flex-col max-w-md mx-auto overflow-x-hidden bg-background-light font-display text-slate-800 transition-colors duration-200 pb-32">
-      <header className="sticky top-0 z-40 bg-background-light/90 backdrop-blur-md px-6 py-4 flex items-center justify-center">
-        <h1 className="text-xl font-extrabold tracking-tight text-slate-900 text-center">
+      <header className="sticky top-0 z-40 bg-background-light/90 backdrop-blur-md px-6 py-4 flex items-center justify-between">
+        <div className="w-10"></div>
+        <h1 className="text-xl font-extrabold tracking-tight text-slate-900 text-center flex-1">
           Account Book
         </h1>
+        <button
+          onClick={() => setShowLogoutModal(true)}
+          className="w-10 h-10 flex items-center justify-center text-gray-600 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+          title="Logout"
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: "24px" }}>
+            logout
+          </span>
+        </button>
       </header>
 
       <main className="flex flex-col px-5 mt-2">
@@ -1935,6 +1975,18 @@ export default function SettingsPage() {
           </Link>
         </div>
       </nav>
+
+      <ConfirmModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={handleLogout}
+        title="確認登出"
+        message="確定要登出嗎？"
+        confirmText="登出"
+        cancelText="取消"
+        type="warning"
+        isLoading={isLoggingOut}
+      />
 
       <ConfirmModal
         isOpen={showAlertModal}
