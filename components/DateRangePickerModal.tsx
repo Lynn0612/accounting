@@ -64,22 +64,26 @@ export default function DateRangePickerModal({
       day
     );
 
-    if (selecting === "start") {
-      if (clickedDate > endDate) {
-        setStartDate(clickedDate);
-        setEndDate(clickedDate);
-        setSelecting("end");
-      } else {
-        setStartDate(clickedDate);
-        setSelecting("end");
-      }
+    // Normalize dates to compare only the date part (ignore time)
+    const clickedDateOnly = new Date(clickedDate.getFullYear(), clickedDate.getMonth(), clickedDate.getDate());
+    const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+
+    // If start and end are the same (initial state or just reset), clicking any date sets both
+    if (startDateOnly.getTime() === endDateOnly.getTime()) {
+      setStartDate(clickedDateOnly);
+      setEndDate(clickedDateOnly);
+      setSelecting("end");
     } else {
-      if (clickedDate < startDate) {
-        setStartDate(clickedDate);
-        setEndDate(clickedDate);
-        setSelecting("start");
+      // If start and end are different, clicking a date will:
+      // - If clicked date is before or equal to start, set as new start (and end = start)
+      // - If clicked date is after start, set as end
+      if (clickedDateOnly <= startDateOnly) {
+        setStartDate(clickedDateOnly);
+        setEndDate(clickedDateOnly);
+        setSelecting("end");
       } else {
-        setEndDate(clickedDate);
+        setEndDate(clickedDateOnly);
         setSelecting("start");
       }
     }

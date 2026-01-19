@@ -450,7 +450,7 @@ export default function SettingsPage() {
       // Fetch all participants for name mapping
       const { data: participants } = await supabase
         .from(ledgerType === 'account_book' ? 'book_members' : 'ledger_members')
-        .select('user_id, profiles!inner(id, full_name)')
+        .select('user_id, profiles(id, full_name)')
         .eq(ledgerType === 'account_book' ? 'book_id' : 'ledger_id', ledgerId);
 
       const participantMap = new Map<string, string>();
