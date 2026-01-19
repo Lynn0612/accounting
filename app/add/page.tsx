@@ -1589,8 +1589,12 @@ function AddTransactionPageContent() {
       </div>
 
       <div
-        className="flex-1 flex flex-col w-full overflow-y-auto no-scrollbar relative z-10 pb-32"
-        style={{ WebkitOverflowScrolling: 'touch' as any }}
+        className="flex-1 flex flex-col w-full overflow-y-auto no-scrollbar relative z-10"
+        style={{ 
+          WebkitOverflowScrolling: 'touch' as any,
+          paddingBottom: showKeypad ? '450px' : '128px',
+          transition: 'padding-bottom 0.3s ease-in-out'
+        }}
         onClick={() => {
           setShowKeypad(false);
           setEditingAmountType(null);
