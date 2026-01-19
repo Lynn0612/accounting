@@ -44,6 +44,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
           category_id,
           expense_payment_source,
           income_mode,
+          is_public_expense,
           created_at${includeCategory ? ', categories (id, name, icon)' : ''}
         )
       `)
@@ -142,7 +143,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
   // 如果 includePayer 為 true，使用 JOIN 一次查詢獲取 payer 資訊
   let query = supabase
     .from('transactions')
-    .select(`
+      .select(`
       id,
       amount,
       description,
@@ -152,6 +153,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
       category_id,
       expense_payment_source,
       income_mode,
+      is_public_expense,
       created_at${includeCategory ? ', categories (id, name, icon)' : ''}${includePayer ? ', payer:profiles!transactions_payer_id_fkey (id, full_name, avatar_url)' : ''}
     `)
     .eq(scopeColumn, ledgerId)

@@ -182,11 +182,21 @@ export default function TransactionsPage() {
   }, [])
 
   const groupedTransactions = useMemo(() => {
-    // Sort filtered transactions by createdAt (newest entry first)
+    // Sort filtered transactions by date first (newest date first), then by createdAt (newest time first)
     const sortedTransactions = [...filteredTransactions].sort((a, b) => {
-      const timeA = (a as any).createdAt?.getTime() || 0
-      const timeB = (b as any).createdAt?.getTime() || 0
-      return timeB - timeA
+      // First, compare by date (transaction date)
+      const dateA = new Date(a.date).getTime()
+      const dateB = new Date(b.date).getTime()
+      const dateDiff = dateB - dateA // Newest date first
+      
+      // If dates are the same, compare by createdAt (time)
+      if (dateDiff === 0) {
+        const timeA = (a as any).createdAt?.getTime() || 0
+        const timeB = (b as any).createdAt?.getTime() || 0
+        return timeB - timeA // Newest time first
+      }
+      
+      return dateDiff
     })
 
     // Single pass grouping for better performance

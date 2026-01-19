@@ -43,6 +43,7 @@ export default function StatisticsPage() {
   
   const [statType, setStatType] = useState<'expense' | 'income'>('expense')
   const [showDatePicker, setShowDatePicker] = useState(false)
+  const [showSharedExpenseOnly, setShowSharedExpenseOnly] = useState(false) // 公費統計切換
   // Default to current month
   const [startDate, setStartDate] = useState<Date>(() => {
     const now = new Date()
@@ -63,7 +64,7 @@ export default function StatisticsPage() {
 
   useEffect(() => {
     loadStatistics()
-  }, [statType, startDate, endDate, activeLedger])
+  }, [statType, startDate, endDate, activeLedger, showSharedExpenseOnly])
 
   const loadDepositDetails = async () => {
     if (!activeLedger?.id) return
@@ -155,7 +156,7 @@ export default function StatisticsPage() {
       const endDateStr = endDate.toISOString().split('T')[0]
 
       // Optimized: Fetch transactions with categories in one join query
-      const { data: transactions, error: txError } = await supabase
+      let query = supabase
         .from('transactions')
         .select(`
           id,
@@ -165,6 +166,7 @@ export default function StatisticsPage() {
           date,
           income_mode,
           expense_payment_source,
+          is_public_expense,
           categories (
             id,
             name,
@@ -176,6 +178,13 @@ export default function StatisticsPage() {
         .eq('type', statType === 'expense' ? 'expense' : 'income')
         .gte('date', startDateStr)
         .lte('date', endDateStr)
+
+      // Filter for shared expenses only when showSharedExpenseOnly is true and statType is expense
+      if (showSharedExpenseOnly && statType === 'expense') {
+        query = query.eq('is_public_expense', true)
+      }
+
+      const { data: transactions, error: txError } = await query
         .order('date', { ascending: false })
 
       if (txError) {
@@ -402,7 +411,10 @@ export default function StatisticsPage() {
           <label className="flex-1 cursor-pointer">
             <input
               checked={statType === 'income'}
-              onChange={() => setStatType('income')}
+              onChange={() => {
+                setStatType('income')
+                setShowSharedExpenseOnly(false) // Reset shared expense filter when switching to income
+              }}
               className="peer sr-only"
               name="stat_type"
               type="radio"
@@ -413,6 +425,32 @@ export default function StatisticsPage() {
             </div>
           </label>
         </div>
+
+        {/* 公費統計切換 - 只在支出模式且為多成員帳本時顯示 */}
+        {statType === 'expense' && isMultiMemberLedger && (
+          <div className="mt-4">
+            <label className="flex items-center justify-between cursor-pointer bg-white p-4 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                  <span className="material-symbols-outlined">groups</span>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-text-main">公費統計</h4>
+                  <p className="text-xs text-text-muted">Shared Expense Breakdown</p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showSharedExpenseOnly}
+                  onChange={(e) => setShowSharedExpenseOnly(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-12 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col items-center gap-3 mb-6 px-6">
@@ -472,11 +510,16 @@ export default function StatisticsPage() {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center z-10">
                 <span className="text-text-secondary text-sm font-medium mb-1">
-                  Total {statType === 'expense' ? 'Expense' : 'Income'}
+                  {showSharedExpenseOnly && statType === 'expense' 
+                    ? 'Total Shared Expense' 
+                    : `Total ${statType === 'expense' ? 'Expense' : 'Income'}`}
                 </span>
                 <span className="text-3xl font-bold text-text-main tracking-tight">
                   {formatAmountSimple(totalAmount)}
                 </span>
+                {showSharedExpenseOnly && statType === 'expense' && (
+                  <span className="text-xs text-text-muted mt-1">公費總計</span>
+                )}
               </div>
             </div>
             <div className="w-full grid grid-cols-3 gap-3">
@@ -511,7 +554,13 @@ export default function StatisticsPage() {
           </div>
 
           <div className="px-8 mb-4 flex justify-between items-end">
-            <h3 className="text-lg font-bold text-text-main">{statType === 'expense' ? 'Top Spending' : 'Top Income'}</h3>
+            <h3 className="text-lg font-bold text-text-main">
+              {showSharedExpenseOnly && statType === 'expense' 
+                ? '公費統計 (Shared Expense)' 
+                : statType === 'expense' 
+                  ? 'Top Spending' 
+                  : 'Top Income'}
+            </h3>
             <button
               onClick={() => setShowAllCategories(true)}
               className="text-sm font-medium text-primary hover:text-primary-light transition-colors"
@@ -603,7 +652,13 @@ export default function StatisticsPage() {
               >
                 <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>close</span>
               </button>
-              <h1 className="text-xl font-bold text-text-main tracking-tight">{statType === 'expense' ? 'All Spending' : 'All Income'}</h1>
+              <h1 className="text-xl font-bold text-text-main tracking-tight">
+                {showSharedExpenseOnly && statType === 'expense' 
+                  ? '公費統計 (All Shared Expense)' 
+                  : statType === 'expense' 
+                    ? 'All Spending' 
+                    : 'All Income'}
+              </h1>
               <button
                 onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
                 className="flex items-center justify-center w-10 h-10 rounded-full bg-white shadow-sm text-text-secondary hover:text-primary hover:bg-gray-50 active:scale-95 transition-all"

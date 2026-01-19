@@ -135,6 +135,19 @@ const HomePageClient = memo(function HomePageClient({
     enabled: !!activeLedger?.id && !!user?.id
   });
 
+  // Query all shared expenses (公費總支出) for the current month
+  // Note: We don't use userId filter here because shared expenses are ledger-wide
+  const { data: allMonthlyTransactions } = useTransactions({
+    ledgerId: activeLedger?.id || '',
+    ledgerType: activeLedger?.type || 'ledger',
+    startDate: startOfMonth,
+    endDate: endOfMonth,
+    type: 'expense',
+    includeCategory: true,
+  }, {
+    enabled: !!activeLedger?.id
+  });
+
   const [isOutstandingModalOpen, setIsOutstandingModalOpen] = useState(false);
 
   // Real-time calculation for Total Balance (個人餘額：個人的分帳收入 - 個人的分帳支出)
@@ -150,6 +163,18 @@ const HomePageClient = memo(function HomePageClient({
         .reduce((sum, tx) => sum + Number(tx.amount), 0),
     };
   }, [monthlyTransactions]);
+
+  // Calculate Total Shared Expense (公費總支出)
+  const totalSharedExpense = useMemo(() => {
+    const transactionsToUse = allMonthlyTransactions || [];
+    return transactionsToUse
+      .filter((tx: any) => 
+        tx.type === 'expense' && 
+        tx.is_public_expense === true &&
+        tx.expense_payment_source !== 'deposit'
+      )
+      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+  }, [allMonthlyTransactions]);
 
   // 顯示該使用者的個人結餘 (只限本月) - memoize to avoid recalculation
   const { displayIncome, displayExpenses, displayPercentage } = useMemo(() => {
@@ -203,6 +228,30 @@ const HomePageClient = memo(function HomePageClient({
             <SemiCircleProgress percentage={displayPercentage} />
           </div>
         </div>
+
+        {/* Total Shared Expense Card */}
+        {participants.length > 1 && (
+          <div className="mt-6">
+            <div className="bg-white rounded-card p-5 shadow-soft flex flex-col">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <span className="material-symbols-outlined">groups</span>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-text-main">公費總計</h4>
+                    <p className="text-xs text-text-muted">Total Shared Expense</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-text-main">
+                    {formatAmountSimple(totalSharedExpense)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Total Outstanding Card */}
         <div 
