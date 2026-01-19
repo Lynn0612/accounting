@@ -89,6 +89,8 @@ function AddTransactionPageContent() {
   const [incomeMode, setIncomeMode] = useState<'personal' | 'deposit' | 'bonus'>('personal');
   const [saving, setSaving] = useState(false);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
+  const [editingAmountType, setEditingAmountType] = useState<'main' | 'depositSplit' | 'customSplit' | 'publicAmount' | null>(null);
+  const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
 
   const toLocalDateString = useCallback((date: Date) => {
     const y = date.getFullYear()
@@ -341,7 +343,7 @@ function AddTransactionPageContent() {
   }, [currentUser, setActiveLedger, supabase, router]);
 
   const handleKeypadInput = useCallback((value: string) => {
-    setAmount((prev) => {
+    const handleInput = (prev: string) => {
       if (shouldResetAmount && !["+", "-", "×", "÷"].includes(value)) {
         setShouldResetAmount(false);
         if (value === ".") {
@@ -370,23 +372,78 @@ function AddTransactionPageContent() {
         return prev + value;
       }
       return prev + value;
-    });
-  }, [shouldResetAmount]);
+    };
+
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      setDepositSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        return { ...prev, [editingAmountId]: handleInput(current) };
+      });
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      setCustomSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        return { ...prev, [editingAmountId]: handleInput(current) };
+      });
+    } else if (editingAmountType === 'publicAmount') {
+      setPublicAmount((prev) => handleInput(prev || "0"));
+    } else {
+      // Main amount
+      setAmount((prev) => handleInput(prev));
+    }
+  }, [shouldResetAmount, editingAmountType, editingAmountId]);
 
   const handleClear = useCallback(() => {
-    setAmount("0");
-  }, []);
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      setDepositSplitAmounts((prev) => ({ ...prev, [editingAmountId]: "0" }));
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      setCustomSplitAmounts((prev) => ({ ...prev, [editingAmountId]: "0" }));
+    } else if (editingAmountType === 'publicAmount') {
+      setPublicAmount("0");
+    } else {
+      setAmount("0");
+    }
+  }, [editingAmountType, editingAmountId]);
 
   const handleBackspace = useCallback(() => {
-    setAmount((prev) => {
-      if (prev.length <= 1) return "0";
-      return prev.slice(0, -1);
-    });
-  }, []);
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      setDepositSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        if (current.length <= 1) return { ...prev, [editingAmountId]: "0" };
+        return { ...prev, [editingAmountId]: current.slice(0, -1) };
+      });
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      setCustomSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        if (current.length <= 1) return { ...prev, [editingAmountId]: "0" };
+        return { ...prev, [editingAmountId]: current.slice(0, -1) };
+      });
+    } else if (editingAmountType === 'publicAmount') {
+      setPublicAmount((prev) => {
+        if (prev.length <= 1) return "0";
+        return prev.slice(0, -1);
+      });
+    } else {
+      setAmount((prev) => {
+        if (prev.length <= 1) return "0";
+        return prev.slice(0, -1);
+      });
+    }
+  }, [editingAmountType, editingAmountId]);
 
   const handleCalculate = useCallback(() => {
     try {
-      let expression = amount
+      let currentValue = "";
+      if (editingAmountType === 'depositSplit' && editingAmountId) {
+        currentValue = depositSplitAmounts[editingAmountId] || "0";
+      } else if (editingAmountType === 'customSplit' && editingAmountId) {
+        currentValue = customSplitAmounts[editingAmountId] || "0";
+      } else if (editingAmountType === 'publicAmount') {
+        currentValue = publicAmount || "0";
+      } else {
+        currentValue = amount;
+      }
+
+      let expression = currentValue
         .replace(/×/g, "*")
         .replace(/÷/g, "/")
         .replace(/[^0-9+\-*/.() ]/g, "");
@@ -406,20 +463,48 @@ function AddTransactionPageContent() {
         ? numResult.toString() 
         : numResult.toFixed(2).replace(/\.?0+$/, "");
       
-      setAmount(formatted);
+      if (editingAmountType === 'depositSplit' && editingAmountId) {
+        setDepositSplitAmounts((prev) => ({ ...prev, [editingAmountId]: formatted }));
+      } else if (editingAmountType === 'customSplit' && editingAmountId) {
+        setCustomSplitAmounts((prev) => ({ ...prev, [editingAmountId]: formatted }));
+      } else if (editingAmountType === 'publicAmount') {
+        setPublicAmount(formatted);
+      } else {
+        setAmount(formatted);
+      }
     } catch {
       // Invalid expression, keep current amount
     }
-  }, [amount]);
+  }, [amount, editingAmountType, editingAmountId, depositSplitAmounts, customSplitAmounts, publicAmount]);
 
   const handleConfirmAmount = useCallback(() => {
-    if (amount.includes("+") || amount.includes("×") || amount.includes("÷") || (amount.includes("-") && amount.split("-").length > 2)) {
+    let currentValue = "";
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      currentValue = depositSplitAmounts[editingAmountId] || "0";
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      currentValue = customSplitAmounts[editingAmountId] || "0";
+    } else if (editingAmountType === 'publicAmount') {
+      currentValue = publicAmount || "0";
+    } else {
+      currentValue = amount;
+    }
+
+    if (currentValue.includes("+") || currentValue.includes("×") || currentValue.includes("÷") || (currentValue.includes("-") && currentValue.split("-").length > 2)) {
       handleCalculate();
     }
-    if (isValidAmount()) {
+    
+    if (editingAmountType === 'main') {
+      const num = parseFloat(amount);
+      if (!isNaN(num) && num > 0) {
+        setShowKeypad(false);
+      }
+    } else {
+      // For other amount types, just close the keypad
       setShowKeypad(false);
+      setEditingAmountType(null);
+      setEditingAmountId(null);
     }
-  }, [amount, handleCalculate]);
+  }, [amount, editingAmountType, editingAmountId, depositSplitAmounts, customSplitAmounts, publicAmount, handleCalculate]);
 
   // Auto-disable shared expense if ledger becomes single-member
   useEffect(() => {
@@ -1458,17 +1543,21 @@ function AddTransactionPageContent() {
       <div
         className="flex-1 flex flex-col w-full overflow-y-auto no-scrollbar relative z-10 pb-32"
         style={{ WebkitOverflowScrolling: 'touch' as any }}
-        onClick={() => setShowKeypad(false)}
+        onClick={() => {
+          setShowKeypad(false);
+          setEditingAmountType(null);
+          setEditingAmountId(null);
+        }}
       >
         <div className="flex flex-col items-center justify-center pt-10 px-4">
-          <div className="flex flex-col items-center w-full max-w-[320px]">
+          <div className="flex flex-col items-center max-w-[320px]">
             <h1
               onClick={(e) => {
                 e.stopPropagation();
                 setShouldResetAmount(true);
                 setShowKeypad(true);
               }}
-              className={`tracking-tighter font-extrabold flex items-start justify-center gap-1 cursor-pointer w-full text-center break-all whitespace-pre-wrap ${
+              className={`tracking-tighter font-extrabold flex items-start justify-center gap-1 cursor-pointer text-center break-all whitespace-pre-wrap ${
                 transactionType === "expense" ? "text-gray-500" : "text-primary"
               } ${
                 amount.length > 12 ? 'text-3xl' : amount.length > 8 ? 'text-4xl' : amount.length > 5 ? 'text-5xl' : 'text-[64px]'
@@ -1711,8 +1800,15 @@ function AddTransactionPageContent() {
                                   const v = e.target.value;
                                   setDepositSplitAmounts((prev) => ({ ...prev, [id]: v }));
                                 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingAmountType('depositSplit');
+                                  setEditingAmountId(id);
+                                  setShowKeypad(true);
+                                }}
                                 placeholder="Auto"
-                                className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                                className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
+                                readOnly
                               />
                             </div>
                           );
@@ -1874,8 +1970,15 @@ function AddTransactionPageContent() {
                             const v = e.target.value;
                             setCustomSplitAmounts((prev) => ({ ...prev, [id]: v }));
                           }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingAmountType('customSplit');
+                            setEditingAmountId(id);
+                            setShowKeypad(true);
+                          }}
                           placeholder="Auto"
-                          className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                          className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
+                          readOnly
                         />
                       </div>
                     );
@@ -1932,6 +2035,12 @@ function AddTransactionPageContent() {
                     }
                     setPublicAmountManuallySet(true);
                   }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingAmountType('publicAmount');
+                    setEditingAmountId(null);
+                    setShowKeypad(true);
+                  }}
                   onBlur={(e) => {
                     const val = e.target.value;
                     if (val === "") {
@@ -1949,7 +2058,8 @@ function AddTransactionPageContent() {
                     }
                   }}
                   placeholder="Auto-calculated"
-                  className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                  className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
+                  readOnly
                 />
                 <p className="text-xs text-text-muted mt-2">
                   Default: ${(() => {
