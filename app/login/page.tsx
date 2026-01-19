@@ -191,7 +191,7 @@ function LoginPageContent() {
       <div className="relative flex h-full w-full flex-col mx-auto max-w-md shadow-2xl bg-background-light" style={{ height: '100%', maxHeight: '100dvh' }}>
         <div className="h-12 w-full shrink-0"></div>
 
-        <div className="flex-1 flex flex-col items-center justify-center px-6 z-10 min-h-0">
+        <div className="flex-1 flex flex-col items-center justify-center p-6 z-10 min-h-0">
           <div className="flex flex-col items-center gap-2 mb-8">
             <h1 className="text-primary tracking-tight text-[30px] font-extrabold leading-tight text-center">
             Track Your Expenses
