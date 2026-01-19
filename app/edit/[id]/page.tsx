@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -70,6 +70,9 @@ export default function EditTransactionPage() {
   const [showPublicShareModal, setShowPublicShareModal] = useState(false)
   const [repaymentParticipantIds, setRepaymentParticipantIds] = useState<string[]>([])
   const [showRepaymentModal, setShowRepaymentModal] = useState(false)
+  const [editingAmountType, setEditingAmountType] = useState<'main' | 'depositSplit' | 'customSplit' | 'publicAmount' | null>(null)
+  const [editingAmountId, setEditingAmountId] = useState<string | null>(null)
+  const editingInputRef = useRef<HTMLInputElement | null>(null)
   const [originalTransaction, setOriginalTransaction] = useState<any>(null)
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null)
   const [originalRepaymentParticipantIds, setOriginalRepaymentParticipantIds] = useState<string[]>([])
@@ -343,8 +346,21 @@ export default function EditTransactionPage() {
     }
   }, [isMultiMemberLedger, incomeMode, payerId, user?.id])
 
+  // Scroll to editing input when keypad opens
+  useEffect(() => {
+    if (showKeypad && editingInputRef.current) {
+      setTimeout(() => {
+        editingInputRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center',
+          inline: 'nearest'
+        });
+      }, 100);
+    }
+  }, [showKeypad, editingAmountType, editingAmountId]);
+
   const handleKeypadInput = useCallback((value: string) => {
-    setAmount((prev) => {
+    const handleInput = (prev: string) => {
       if (shouldResetAmount && !["+", "-", "×", "÷"].includes(value)) {
         setShouldResetAmount(false);
         if (value === ".") {
@@ -373,23 +389,78 @@ export default function EditTransactionPage() {
         return prev + value;
       }
       return prev + value;
-    });
-  }, [shouldResetAmount]);
+    };
+
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      setDepositSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        return { ...prev, [editingAmountId]: handleInput(current) };
+      });
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      setCustomSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        return { ...prev, [editingAmountId]: handleInput(current) };
+      });
+    } else if (editingAmountType === 'publicAmount') {
+      setPublicAmount((prev) => handleInput(prev || "0"));
+    } else {
+      // Main amount
+      setAmount((prev) => handleInput(prev));
+    }
+  }, [shouldResetAmount, editingAmountType, editingAmountId]);
 
   const handleClear = useCallback(() => {
-    setAmount("0");
-  }, []);
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      setDepositSplitAmounts((prev) => ({ ...prev, [editingAmountId]: "0" }));
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      setCustomSplitAmounts((prev) => ({ ...prev, [editingAmountId]: "0" }));
+    } else if (editingAmountType === 'publicAmount') {
+      setPublicAmount("0");
+    } else {
+      setAmount("0");
+    }
+  }, [editingAmountType, editingAmountId]);
 
   const handleBackspace = useCallback(() => {
-    setAmount((prev) => {
-      if (prev.length <= 1) return "0";
-      return prev.slice(0, -1);
-    });
-  }, []);
+    if (editingAmountType === 'depositSplit' && editingAmountId) {
+      setDepositSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        if (current.length <= 1) return { ...prev, [editingAmountId]: "0" };
+        return { ...prev, [editingAmountId]: current.slice(0, -1) };
+      });
+    } else if (editingAmountType === 'customSplit' && editingAmountId) {
+      setCustomSplitAmounts((prev) => {
+        const current = prev[editingAmountId] || "0";
+        if (current.length <= 1) return { ...prev, [editingAmountId]: "0" };
+        return { ...prev, [editingAmountId]: current.slice(0, -1) };
+      });
+    } else if (editingAmountType === 'publicAmount') {
+      setPublicAmount((prev) => {
+        if (prev.length <= 1) return "0";
+        return prev.slice(0, -1);
+      });
+    } else {
+      setAmount((prev) => {
+        if (prev.length <= 1) return "0";
+        return prev.slice(0, -1);
+      });
+    }
+  }, [editingAmountType, editingAmountId]);
 
   const handleCalculate = useCallback(() => {
     try {
-      let expression = amount
+      let currentValue = "";
+      if (editingAmountType === 'depositSplit' && editingAmountId) {
+        currentValue = depositSplitAmounts[editingAmountId] || "0";
+      } else if (editingAmountType === 'customSplit' && editingAmountId) {
+        currentValue = customSplitAmounts[editingAmountId] || "0";
+      } else if (editingAmountType === 'publicAmount') {
+        currentValue = publicAmount || "0";
+      } else {
+        currentValue = amount;
+      }
+
+      let expression = currentValue
         .replace(/×/g, "*")
         .replace(/÷/g, "/")
         .replace(/[^0-9+\-*/.() ]/g, "");
@@ -409,11 +480,19 @@ export default function EditTransactionPage() {
         ? numResult.toString() 
         : numResult.toFixed(2).replace(/\.?0+$/, "");
       
-      setAmount(formatted);
+      if (editingAmountType === 'depositSplit' && editingAmountId) {
+        setDepositSplitAmounts((prev) => ({ ...prev, [editingAmountId]: formatted }));
+      } else if (editingAmountType === 'customSplit' && editingAmountId) {
+        setCustomSplitAmounts((prev) => ({ ...prev, [editingAmountId]: formatted }));
+      } else if (editingAmountType === 'publicAmount') {
+        setPublicAmount(formatted);
+      } else {
+        setAmount(formatted);
+      }
     } catch {
       // Invalid expression, keep current amount
     }
-  }, [amount]);
+  }, [amount, editingAmountType, editingAmountId, depositSplitAmounts, customSplitAmounts, publicAmount]);
 
   const handleConfirmAmount = useCallback(() => {
     if (amount.includes("+") || amount.includes("×") || amount.includes("÷") || (amount.includes("-") && amount.split("-").length > 2)) {
@@ -1484,7 +1563,11 @@ export default function EditTransactionPage() {
               </div>
               </div>
 
-            <div className="flex flex-col gap-4" onClick={() => setShowKeypad(false)}>
+            <div className="flex flex-col gap-4" onClick={() => {
+              setShowKeypad(false);
+              setEditingAmountType(null);
+              setEditingAmountId(null);
+            }}>
               {/* Counterparty Selection */}
               <div className="bg-white p-5 rounded-card shadow-sm">
                 <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-4">
@@ -1738,6 +1821,8 @@ export default function EditTransactionPage() {
               onClick={(e) => {
                 e.stopPropagation();
                 setShouldResetAmount(true);
+                setEditingAmountType('main');
+                setEditingAmountId(null);
                 setShowKeypad(true);
               }}
               className={`bg-white rounded-pill py-4 px-8 shadow-sm border border-gray-100 flex items-center justify-center min-w-[120px] max-w-[240px] cursor-pointer relative z-[101] break-all whitespace-pre-wrap ${
@@ -1984,6 +2069,7 @@ export default function EditTransactionPage() {
                                 <div className="text-sm font-semibold text-text-main truncate">{p.name}</div>
                               </div>
                               <input
+                                ref={editingAmountType === 'depositSplit' && editingAmountId === id ? editingInputRef : null}
                                 type="number"
                                 inputMode="numeric"
                                 value={depositSplitAmounts[id] ?? ''}
@@ -1991,8 +2077,15 @@ export default function EditTransactionPage() {
                                   const v = e.target.value
                                   setDepositSplitAmounts((prev) => ({ ...prev, [id]: v }))
                                 }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setEditingAmountType('depositSplit')
+                                  setEditingAmountId(id)
+                                  setShowKeypad(true)
+                                }}
                                 placeholder="Auto"
-                                className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                                className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
+                                readOnly
                               />
                             </div>
                           )
@@ -2123,6 +2216,7 @@ export default function EditTransactionPage() {
                             <div className="text-sm font-semibold text-text-main truncate">{p.name}</div>
                           </div>
                           <input
+                            ref={editingAmountType === 'customSplit' && editingAmountId === id ? editingInputRef : null}
                             type="number"
                             inputMode="numeric"
                             value={customSplitAmounts[id] ?? ''}
@@ -2130,8 +2224,15 @@ export default function EditTransactionPage() {
                               const v = e.target.value
                               setCustomSplitAmounts((prev) => ({ ...prev, [id]: v }))
                             }}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingAmountType('customSplit')
+                              setEditingAmountId(id)
+                              setShowKeypad(true)
+                            }}
                             placeholder="Auto"
-                            className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                            className="w-28 bg-background-light rounded-xl border-none py-2 px-3 text-text-main font-semibold text-right focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
+                            readOnly
                           />
                         </div>
                       )
@@ -2169,6 +2270,7 @@ export default function EditTransactionPage() {
                     Shared expense Amount ($)
                   </label>
                   <input
+                    ref={editingAmountType === 'publicAmount' ? editingInputRef : null}
                     type="text"
                     inputMode="decimal"
                     value={publicAmount}
@@ -2191,6 +2293,12 @@ export default function EditTransactionPage() {
                       }
                       setPublicAmountManuallySet(true)
                     }}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditingAmountType('publicAmount')
+                      setEditingAmountId(null)
+                      setShowKeypad(true)
+                    }}
                     onBlur={(e) => {
                       const val = e.target.value
                       if (val === '') {
@@ -2208,7 +2316,8 @@ export default function EditTransactionPage() {
                       }
                     }}
                     placeholder="Auto-calculated"
-                    className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow"
+                    className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
+                    readOnly
                   />
                   <p className="text-xs text-text-muted mt-2">
                     Default: ${(() => {
@@ -2520,6 +2629,8 @@ export default function EditTransactionPage() {
             onClick={(e) => {
               e.stopPropagation();
               setShowKeypad(false);
+              setEditingAmountType(null);
+              setEditingAmountId(null);
             }}
           ></div>
           <div className="relative w-full max-w-md pointer-events-auto z-[101]">

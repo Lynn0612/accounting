@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, Suspense } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { X, Edit3 } from "lucide-react";
 import NumericKeypad from "@/components/NumericKeypad";
@@ -91,6 +91,7 @@ function AddTransactionPageContent() {
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
   const [editingAmountType, setEditingAmountType] = useState<'main' | 'depositSplit' | 'customSplit' | 'publicAmount' | null>(null);
   const [editingAmountId, setEditingAmountId] = useState<string | null>(null);
+  const editingInputRef = useRef<HTMLInputElement | null>(null);
 
   const toLocalDateString = useCallback((date: Date) => {
     const y = date.getFullYear()
@@ -512,6 +513,19 @@ function AddTransactionPageContent() {
       setIsPublicExpense(false)
     }
   }, [isMultiMemberLedger, isPublicExpense])
+
+  // Scroll to editing input when keypad opens
+  useEffect(() => {
+    if (showKeypad && editingInputRef.current) {
+      setTimeout(() => {
+        editingInputRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center',
+          inline: 'nearest'
+        });
+      }, 100);
+    }
+  }, [showKeypad, editingAmountType, editingAmountId]);
 
   // Manual scroll to top on mount to avoid Next.js auto-scroll warnings
   useEffect(() => {
@@ -1793,6 +1807,7 @@ function AddTransactionPageContent() {
                                 <div className="text-sm font-semibold text-text-main truncate">{p.name}</div>
                               </div>
                               <input
+                                ref={editingAmountType === 'depositSplit' && editingAmountId === id ? editingInputRef : null}
                                 type="number"
                                 inputMode="numeric"
                                 value={depositSplitAmounts[id] ?? ""}
@@ -1963,6 +1978,7 @@ function AddTransactionPageContent() {
                           <div className="text-sm font-semibold text-text-main truncate">{p.name}</div>
                         </div>
                         <input
+                          ref={editingAmountType === 'customSplit' && editingAmountId === id ? editingInputRef : null}
                           type="number"
                           inputMode="decimal"
                           value={customSplitAmounts[id] ?? ""}
@@ -2013,6 +2029,7 @@ function AddTransactionPageContent() {
                 Shared expense Amount ($)
                 </label>
                 <input
+                  ref={editingAmountType === 'publicAmount' ? editingInputRef : null}
                   type="text"
                   inputMode="decimal"
                   value={publicAmount}
