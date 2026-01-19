@@ -12,7 +12,7 @@ import { useUser } from '@/hooks/useUser'
 import { useParticipants } from '@/hooks/useParticipants'
 import TransactionCard from '@/components/TransactionCard'
 import TransactionCardSkeleton from '@/components/TransactionCardSkeleton'
-import { formatRelativeDate, formatDateRange } from '@/utils/date'
+import { formatRelativeDate, formatDateRange, formatShortDate } from '@/utils/date'
 import { formatTransactionAmount } from '@/utils/formatAmount'
 
 interface Transaction {
@@ -279,7 +279,7 @@ export default function TransactionsPage() {
                 key={tx.id}
                 id={tx.id}
                 title={tx.name}
-                date={formatRelativeDate(tx.date)}
+                date={formatShortDate(tx.date)}
                 categoryName={tx.category}
                 amount={tx.amount}
                 amountPrefix={tx.type === 'income' ? '+' : '-'}
@@ -302,7 +302,7 @@ export default function TransactionsPage() {
                   key={tx.id}
                   id={tx.id}
                   title={tx.name}
-                  date={formatRelativeDate(tx.date)}
+                  date={formatShortDate(tx.date)}
                   categoryName={tx.category}
                   amount={tx.amount}
                   amountPrefix={tx.type === 'income' ? '+' : '-'}
@@ -325,7 +325,7 @@ export default function TransactionsPage() {
                   key={tx.id}
                   id={tx.id}
                   title={tx.name}
-                  date={formatRelativeDate(tx.date)}
+                  date={formatShortDate(tx.date)}
                   categoryName={tx.category}
                   amount={tx.amount}
                   amountPrefix={tx.type === 'income' ? '+' : '-'}

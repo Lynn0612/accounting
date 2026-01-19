@@ -91,7 +91,8 @@ const HomePageClient = memo(function HomePageClient({
       return {
       ...tx,
       isSettlement: false,
-        sortDate: new Date(tx.created_at), // 以記帳時間排序
+        transactionDate: new Date(tx.date), // 交易日期
+        createdAt: new Date(tx.created_at), // 創建時間
         formattedDate, // Pre-computed formatted date
         payerText: tx.payerText || payerText, // Pre-computed payer text
       };
@@ -104,25 +105,46 @@ const HomePageClient = memo(function HomePageClient({
       const senderName = sender?.name || '有人';
       const receiverName = receiver?.name || '有人';
       const payerText = isIncoming ? `${senderName} paid` : `${receiverName} paid`;
+      const transactionDate = s.date ? new Date(s.date) : s.created_at ? new Date(s.created_at) : new Date();
       
       return {
         id: `settlement-${s.id}`,
         description: s.note || 'Repayment',
         amount: s.amount,
-        date: s.date || s.created_at,
+        date: transactionDate,
         type: isIncoming ? 'income' : 'expense',
         isSettlement: true,
-        sortDate: new Date(s.created_at), // 以記帳時間排序
+        transactionDate, // 交易日期
+        createdAt: new Date(s.created_at), // 創建時間
         categories: { name: 'Repayment', icon: '🤝' },
         payer: sender || null,
         payerText: String(payerText),
-        formattedDate: new Date(s.date || s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        formattedDate: transactionDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       };
     });
 
-    return [...txs, ...sts]
-      .sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime())
-      .slice(0, 5);
+    // Sort by date first (newest date first), then by createdAt (newest time first)
+    const sorted = [...txs, ...sts].sort((a, b) => {
+      // First, compare by date (transaction date) - only compare date part, ignore time
+      const dateA = new Date(a.transactionDate || a.date)
+      dateA.setHours(0, 0, 0, 0)
+      const dateB = new Date(b.transactionDate || b.date)
+      dateB.setHours(0, 0, 0, 0)
+      const dateATime = dateA.getTime()
+      const dateBTime = dateB.getTime()
+      const dateDiff = dateBTime - dateATime // Newest date first
+      
+      // If dates are the same (same day), compare by createdAt (time)
+      if (dateDiff === 0) {
+        const timeA = a.createdAt?.getTime() || 0
+        const timeB = b.createdAt?.getTime() || 0
+        return timeB - timeA // Newest time first
+      }
+      
+      return dateDiff
+    });
+
+    return sorted.slice(0, 5);
   }, [realTimeTransactions, initialTransactions, settlements, user?.id, participants]);
 
   const { data: monthlyTransactions } = useTransactions({
