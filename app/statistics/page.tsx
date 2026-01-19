@@ -435,8 +435,7 @@ export default function StatisticsPage() {
                   <span className="material-symbols-outlined">groups</span>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-text-main">公費統計</h4>
-                  <p className="text-xs text-text-muted">Shared Expense Breakdown</p>
+                  <h4 className="font-semibold text-text-main">Public Expense</h4>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -518,7 +517,7 @@ export default function StatisticsPage() {
                   {formatAmountSimple(totalAmount)}
                 </span>
                 {showSharedExpenseOnly && statType === 'expense' && (
-                  <span className="text-xs text-text-muted mt-1">公費總計</span>
+                  <span className="text-xs text-text-muted mt-1">Total Public Expense</span>
                 )}
               </div>
             </div>
@@ -556,7 +555,7 @@ export default function StatisticsPage() {
           <div className="px-8 mb-4 flex justify-between items-end">
             <h3 className="text-lg font-bold text-text-main">
               {showSharedExpenseOnly && statType === 'expense' 
-                ? '公費統計 (Shared Expense)' 
+                ? 'Shared Expense' 
                 : statType === 'expense' 
                   ? 'Top Spending' 
                   : 'Top Income'}
@@ -654,7 +653,7 @@ export default function StatisticsPage() {
               </button>
               <h1 className="text-xl font-bold text-text-main tracking-tight">
                 {showSharedExpenseOnly && statType === 'expense' 
-                  ? '公費統計 (All Shared Expense)' 
+                  ? 'All Public Expense' 
                   : statType === 'expense' 
                     ? 'All Spending' 
                     : 'All Income'}

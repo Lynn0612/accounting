@@ -261,8 +261,7 @@ const HomePageClient = memo(function HomePageClient({
                     <span className="material-symbols-outlined">groups</span>
                   </div>
                   <div>
-                    <h4 className="font-semibold text-text-main">公費總計</h4>
-                    <p className="text-xs text-text-muted">Total Shared Expense</p>
+                    <h4 className="font-semibold text-text-main">Total Shared Expense</h4>
                   </div>
                 </div>
                 <div className="text-right">

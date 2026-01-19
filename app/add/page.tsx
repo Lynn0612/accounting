@@ -1226,14 +1226,14 @@ function AddTransactionPageContent() {
           : defaultPublicAmount;
 
         if (!publicAmount || isNaN(parseFloat(publicAmount)) || parseFloat(publicAmount) <= 0) {
-          handleError(null, "請輸入公費金額");
+          handleError(null, "please enter public amount");
           setSaving(false);
           return;
         }
 
         const publicInt = Math.ceil(finalPublicAmount);
         if (publicInt > totalInt) {
-          handleError(null, "公費不可超過總金額");
+          handleError(null, "public amount cannot exceed total amount");
           setSaving(false);
           return;
         }
@@ -1249,7 +1249,7 @@ function AddTransactionPageContent() {
         const publicShareCount = publicShareParticipants.length;
         
         if (publicShareCount === 0) {
-          handleError(null, "請選擇公費分攤對象");
+          handleError(null, "please select public share participants");
           setSaving(false);
           return;
         }
@@ -1261,7 +1261,7 @@ function AddTransactionPageContent() {
         const personalShareParticipants = effectiveSplitWithIds;
         const personalShares = computeCustomSplits(remainingAmount, personalShareParticipants);
         if (!personalShares.ok) {
-          handleError(null, "分攤金額不可超過總金額");
+          handleError(null, "split amount cannot exceed total amount");
           setSaving(false);
           return;
         }
@@ -1303,7 +1303,7 @@ function AddTransactionPageContent() {
       } else {
         const custom = computeCustomSplits(totalInt, effectiveSplitWithIds);
         if (!custom.ok) {
-          handleError(null, "分攤金額不可超過總金額");
+          handleError(null, "split amount cannot exceed total amount");
           setSaving(false);
           return;
         }
