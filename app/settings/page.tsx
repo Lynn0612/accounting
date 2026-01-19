@@ -6,6 +6,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useLedger } from "@/contexts/LedgerContext";
 import ConfirmModal from "@/components/ConfirmModal";
+import DateRangePickerModal from "@/components/DateRangePickerModal";
+import * as XLSX from "xlsx";
 
 interface Book {
   id: string;
@@ -66,6 +68,17 @@ export default function SettingsPage() {
   const [alertTitle, setAlertTitle] = useState("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showExportDatePicker, setShowExportDatePicker] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [exportEndDate, setExportEndDate] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  });
+  const [isExporting, setIsExporting] = useState(false);
   const router = useRouter();
   const supabase = createClient();
   const { ledgers, activeLedger, setActiveLedger, refreshLedgers } = useLedger();
@@ -407,6 +420,305 @@ export default function SettingsPage() {
   const openDeleteModal = (book: Book) => {
     setSelectedBook(book);
     setShowDeleteModal(true);
+  };
+
+  // Export to Excel function
+  const handleExportToExcel = async () => {
+    if (!activeLedger?.id) {
+      showAlert('Error', 'Please select an account book first');
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        showAlert('Error', 'Please login first');
+        setIsExporting(false);
+        return;
+      }
+
+      const ledgerId = activeLedger.id;
+      const ledgerType = activeLedger.type;
+      const scopeColumn = ledgerType === 'account_book' ? 'book_id' : 'ledger_id';
+      const startDateStr = exportStartDate.toISOString().split('T')[0];
+      const endDateStr = exportEndDate.toISOString().split('T')[0];
+
+      // Fetch all participants for name mapping
+      const { data: participants } = await supabase
+        .from(ledgerType === 'account_book' ? 'book_members' : 'ledger_members')
+        .select('user_id, profiles!inner(id, full_name)')
+        .eq(ledgerType === 'account_book' ? 'book_id' : 'ledger_id', ledgerId);
+
+      const participantMap = new Map<string, string>();
+      (participants || []).forEach((p: any) => {
+        participantMap.set(p.user_id, p.profiles?.full_name || 'Unknown');
+      });
+
+      // Fetch all transactions (expenses and incomes)
+      const { data: transactions, error: txError } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          date,
+          type,
+          amount,
+          description,
+          payer_id,
+          category_id,
+          expense_payment_source,
+          income_mode,
+          is_public_expense,
+          public_amount,
+          categories (id, name, icon),
+          payer:profiles!transactions_payer_id_fkey (id, full_name)
+        `)
+        .eq(scopeColumn, ledgerId)
+        .gte('date', startDateStr)
+        .lte('date', endDateStr)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (txError) {
+        console.error('Error fetching transactions:', txError);
+        showAlert('Error', 'Failed to fetch transactions');
+        setIsExporting(false);
+        return;
+      }
+
+      // Fetch all transaction splits
+      const { data: splits, error: splitsError } = await supabase
+        .from('transaction_splits')
+        .select('transaction_id, user_id, amount')
+        .eq(scopeColumn, ledgerId)
+        .in('transaction_id', (transactions || []).map(tx => tx.id));
+
+      if (splitsError) {
+        console.error('Error fetching splits:', splitsError);
+      }
+
+      // Group splits by transaction_id
+      const splitsByTx = new Map<string, Array<{ user_id: string; amount: number }>>();
+      (splits || []).forEach((split: any) => {
+        if (!splitsByTx.has(split.transaction_id)) {
+          splitsByTx.set(split.transaction_id, []);
+        }
+        splitsByTx.get(split.transaction_id)!.push({
+          user_id: split.user_id,
+          amount: Number(split.amount || 0)
+        });
+      });
+
+      // Fetch settlements
+      const { data: settlements, error: settlementsError } = await supabase
+        .from('settlements')
+        .select(`
+          id,
+          date,
+          amount,
+          note,
+          sender_id,
+          receiver_id,
+          sender:profiles!settlements_sender_id_fkey (id, full_name),
+          receiver:profiles!settlements_receiver_id_fkey (id, full_name)
+        `)
+        .eq('ledger_id', ledgerId)
+        .gte('date', startDateStr)
+        .lte('date', endDateStr)
+        .order('date', { ascending: false });
+
+      if (settlementsError) {
+        console.error('Error fetching settlements:', settlementsError);
+      }
+
+      // Prepare data for Excel
+      const expenses: any[] = [];
+      const incomes: any[] = [];
+      const categoryTotals = new Map<string, { amount: number; count: number }>();
+
+      (transactions || []).forEach((tx: any) => {
+        const date = new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const payerName = tx.payer?.full_name || participantMap.get(tx.payer_id) || 'Unknown';
+        const categoryName = tx.categories?.name || 'Other';
+        const amount = Number(tx.amount || 0);
+        const splits = splitsByTx.get(tx.id) || [];
+        const splitDetails = splits.map(s => `${participantMap.get(s.user_id) || 'Unknown'}: $${s.amount.toFixed(2)}`).join('; ');
+        const publicAmount = tx.is_public_expense ? (Number(tx.public_amount || 0) || amount) : 0;
+
+        // Update category totals
+        if (!categoryTotals.has(categoryName)) {
+          categoryTotals.set(categoryName, { amount: 0, count: 0 });
+        }
+        const catTotal = categoryTotals.get(categoryName)!;
+        catTotal.amount += amount;
+        catTotal.count += 1;
+
+        if (tx.type === 'expense') {
+          expenses.push({
+            Date: date,
+            Payer: payerName,
+            Category: categoryName,
+            Note: tx.description || '',
+            Amount: amount,
+            'Split Details': splitDetails,
+            'Public Fund Amount': tx.is_public_expense ? publicAmount : 0
+          });
+        } else if (tx.type === 'income') {
+          incomes.push({
+            Date: date,
+            Payer: payerName,
+            Category: categoryName,
+            Note: tx.description || '',
+            Amount: amount,
+            Type: tx.income_mode === 'deposit' ? 'Top-up' : tx.income_mode === 'bonus' ? 'Bonus' : tx.income_mode === 'refund' ? 'Refund' : 'Income'
+          });
+        }
+      });
+
+      // Add repayments to incomes
+      (settlements || []).forEach((s: any) => {
+        const date = new Date(s.date || s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const senderName = s.sender?.full_name || participantMap.get(s.sender_id) || 'Unknown';
+        const receiverName = s.receiver?.full_name || participantMap.get(s.receiver_id) || 'Unknown';
+        incomes.push({
+          Date: date,
+          Payer: senderName,
+          Category: 'Repayment',
+          Note: s.note || `Repayment from ${senderName} to ${receiverName}`,
+          Amount: Number(s.amount || 0),
+          Type: 'Repayment'
+        });
+      });
+
+      // Calculate previous period for comparison
+      const periodDays = Math.ceil((exportEndDate.getTime() - exportStartDate.getTime()) / (1000 * 60 * 60 * 24));
+      const prevStartDate = new Date(exportStartDate);
+      prevStartDate.setDate(prevStartDate.getDate() - periodDays - 1);
+      const prevEndDate = new Date(exportStartDate);
+      prevEndDate.setDate(prevEndDate.getDate() - 1);
+      const prevStartDateStr = prevStartDate.toISOString().split('T')[0];
+      const prevEndDateStr = prevEndDate.toISOString().split('T')[0];
+
+      // Fetch previous period transactions for comparison
+      const { data: prevTransactions } = await supabase
+        .from('transactions')
+        .select('amount, category_id, type, categories (name)')
+        .eq(scopeColumn, ledgerId)
+        .gte('date', prevStartDateStr)
+        .lte('date', prevEndDateStr);
+
+      const prevCategoryTotals = new Map<string, number>();
+      (prevTransactions || []).forEach((tx: any) => {
+        const categoryName = tx.categories?.name || 'Other';
+        const amount = Number(tx.amount || 0);
+        prevCategoryTotals.set(categoryName, (prevCategoryTotals.get(categoryName) || 0) + amount);
+      });
+
+      // Prepare summary data
+      const totalExpense = expenses.reduce((sum, e) => sum + e.Amount, 0);
+      const totalIncome = incomes.reduce((sum, i) => sum + i.Amount, 0);
+      const summary: any[] = [];
+      
+      // Add category breakdown
+      const sortedCategories = Array.from(categoryTotals.entries())
+        .sort((a, b) => b[1].amount - a[1].amount);
+
+      sortedCategories.forEach(([category, data]) => {
+        const percentage = totalExpense > 0 ? ((data.amount / totalExpense) * 100).toFixed(2) : '0.00';
+        const prevAmount = prevCategoryTotals.get(category) || 0;
+        const comparison = prevAmount > 0 ? (((data.amount - prevAmount) / prevAmount) * 100).toFixed(2) : 'N/A';
+        summary.push({
+          Category: category,
+          'Total Amount': data.amount,
+          'Percentage (%)': `${percentage}%`,
+          'Transaction Count': data.count,
+          'Comparison (%)': comparison !== 'N/A' ? `${comparison}%` : 'N/A'
+        });
+      });
+
+      // Add totals row
+      summary.push({
+        Category: 'TOTAL',
+        'Total Amount': totalExpense,
+        'Percentage (%)': '100.00%',
+        'Transaction Count': expenses.length,
+        'Comparison (%)': 'N/A'
+      });
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: Expenses
+      const wsExpenses = XLSX.utils.json_to_sheet(expenses);
+      wsExpenses['!cols'] = [
+        { wch: 12 }, // Date
+        { wch: 15 }, // Payer
+        { wch: 15 }, // Category
+        { wch: 25 }, // Note
+        { wch: 12 }, // Amount
+        { wch: 30 }, // Split Details
+        { wch: 18 }  // Public Fund Amount
+      ];
+      XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expenses');
+
+      // Sheet 2: Incomes & Top-ups
+      const wsIncomes = XLSX.utils.json_to_sheet(incomes);
+      wsIncomes['!cols'] = [
+        { wch: 12 }, // Date
+        { wch: 15 }, // Payer
+        { wch: 15 }, // Category
+        { wch: 25 }, // Note
+        { wch: 12 }, // Amount
+        { wch: 12 }  // Type
+      ];
+      XLSX.utils.book_append_sheet(wb, wsIncomes, 'Incomes & Top-ups');
+
+      // Sheet 3: Summary
+      const wsSummary = XLSX.utils.json_to_sheet(summary);
+      wsSummary['!cols'] = [
+        { wch: 15 }, // Category
+        { wch: 15 }, // Total Amount
+        { wch: 15 }, // Percentage
+        { wch: 18 }, // Transaction Count
+        { wch: 15 }  // Comparison
+      ];
+      
+      // Make total row bold (Note: xlsx library has limited style support)
+      // We'll add a visual indicator by prefixing with "TOTAL: " in the Category column
+      // For better styling, consider using xlsx-js-style or exceljs library
+      const totalRowIndex = summary.length - 1; // Last row is the total
+      const range = XLSX.utils.decode_range(wsSummary['!ref'] || 'A1');
+      // Try to apply styles (may not work in all Excel versions)
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: col });
+        if (!wsSummary[cellAddress]) {
+          // Create cell if it doesn't exist
+          wsSummary[cellAddress] = { v: summary[totalRowIndex][Object.keys(summary[totalRowIndex])[col]] || '' };
+        }
+        // Apply style (limited support in xlsx)
+        if (!wsSummary[cellAddress].s) {
+          wsSummary[cellAddress].s = {};
+        }
+        wsSummary[cellAddress].s.font = { bold: true };
+        wsSummary[cellAddress].s.fill = { fgColor: { rgb: 'E0E0E0' } };
+      }
+
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+      // Generate filename
+      const fileName = `${activeLedger.name}_${startDateStr}_to_${endDateStr}.xlsx`;
+
+      // Write file
+      XLSX.writeFile(wb, fileName);
+
+      setShowExportModal(false);
+      showAlert('Success', 'Excel file exported successfully!');
+    } catch (error: any) {
+      console.error('Export error:', error);
+      showAlert('Error', `Export failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleDeleteBook = async () => {
@@ -1324,6 +1636,23 @@ export default function SettingsPage() {
           </span>
         </button>
 
+        {/* Export to Excel Button */}
+        {activeLedger && (
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="group flex items-center gap-4 mb-4 pl-1 w-full text-left outline-none"
+          >
+            <div className="flex items-center justify-center size-12 rounded-full bg-green-500 text-white shadow-glow hover:bg-green-600 group-hover:scale-110 group-active:scale-95 transition-all duration-300">
+              <span className="material-symbols-outlined" style={{ fontSize: "24px" }}>
+                download
+              </span>
+            </div>
+            <span className="text-lg font-bold text-slate-900 group-hover:text-green-600 transition-colors duration-200">
+              Export to Excel
+            </span>
+          </button>
+        )}
+
         <div className="flex flex-col gap-5">
           {activeBook && (
             <div className="group relative">
@@ -2003,6 +2332,77 @@ export default function SettingsPage() {
         confirmText="Confirm"
         cancelText=""
         type="warning"
+      />
+
+      {/* Export to Excel Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setShowExportModal(false)}></div>
+          <div className="relative w-full max-w-[400px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-900">Export to Excel</h3>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>close</span>
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Date Range</label>
+              <button
+                onClick={() => setShowExportDatePicker(true)}
+                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 rounded-xl border border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                <span className="text-sm text-slate-700">
+                  {exportStartDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - {exportEndDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </span>
+                <span className="material-symbols-outlined text-gray-400" style={{ fontSize: "20px" }}>calendar_month</span>
+              </button>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowExportModal(false)}
+                disabled={isExporting}
+                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExportToExcel}
+                disabled={isExporting}
+                className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isExporting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Exporting...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>download</span>
+                    <span>Export</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Date Range Picker */}
+      <DateRangePickerModal
+        isOpen={showExportDatePicker}
+        onClose={() => setShowExportDatePicker(false)}
+        onConfirm={(start, end) => {
+          setExportStartDate(start);
+          setExportEndDate(end);
+          setShowExportDatePicker(false);
+        }}
+        initialStartDate={exportStartDate}
+        initialEndDate={exportEndDate}
       />
     </div>
   );
