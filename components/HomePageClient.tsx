@@ -185,7 +185,7 @@ const HomePageClient = memo(function HomePageClient({
   }, [router]);
 
   return (
-    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto pb-32">
+    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-x-hidden mx-auto pb-32" style={{ minHeight: '100dvh' }}>
       <header className="pt-8 pb-4 px-6 flex items-center justify-center z-[100]">
         <LedgerDropdown className="w-auto" />
       </header>

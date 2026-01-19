@@ -1454,7 +1454,7 @@ export default function EditTransactionPage() {
           onClose={clearError}
           details={error?.details}
         />
-        <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto">
+        <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-x-hidden mx-auto" style={{ minHeight: '100dvh' }}>
           <header className="pt-8 pb-4 px-6 flex flex-col gap-4 z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
             <div className="flex items-center justify-between w-full">
               <button
@@ -1468,7 +1468,7 @@ export default function EditTransactionPage() {
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto no-scrollbar pb-32 px-6">
+          <main className="flex-1 overflow-y-auto no-scrollbar pb-32 px-6" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="mt-4 mb-8 text-center relative z-[101]">
               <div className="flex items-center justify-center gap-3 mx-auto w-full max-w-[320px]">
                 <span className="text-3xl font-bold text-primary">$</span>

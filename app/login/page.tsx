@@ -187,8 +187,8 @@ function LoginPageContent() {
   };
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-background-light">
-      <div className="relative flex h-full w-full flex-col mx-auto max-w-md shadow-2xl bg-background-light">
+    <div className="fixed inset-0 overflow-hidden bg-background-light" style={{ height: '100dvh', minHeight: '100vh' }}>
+      <div className="relative flex h-full w-full flex-col mx-auto max-w-md shadow-2xl bg-background-light" style={{ height: '100%', maxHeight: '100dvh' }}>
         <div className="h-12 w-full shrink-0"></div>
 
         <div className="flex-1 flex flex-col items-center justify-center px-6 z-10 min-h-0">

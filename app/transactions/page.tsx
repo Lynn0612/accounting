@@ -226,7 +226,7 @@ export default function TransactionsPage() {
   }, [])
 
   return (
-    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-hidden mx-auto pb-32">
+    <div className="w-full max-w-md bg-background-light min-h-screen flex flex-col relative overflow-x-hidden mx-auto pb-32" style={{ minHeight: '100dvh' }}>
       <header className="pt-8 pb-2 px-6 flex flex-col z-10 sticky top-0 bg-background-light/95 backdrop-blur-sm">
         <div className="flex items-center justify-between mb-4">
           <Link

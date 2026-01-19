@@ -1400,8 +1400,8 @@ function AddTransactionPageContent() {
         onClose={clearError}
         details={error?.details}
       />
-    <div className="fixed inset-0 overflow-hidden bg-background-light" data-nextjs-scroll-focus-boundary>
-      <div className="relative flex h-full w-full flex-col max-w-md mx-auto bg-background-light shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-background-light" style={{ height: '100dvh', minHeight: '100vh', overflow: 'hidden' }} data-nextjs-scroll-focus-boundary>
+      <div className="relative flex h-full w-full flex-col max-w-md mx-auto bg-background-light shadow-2xl overflow-y-auto overflow-x-hidden" style={{ height: '100%', maxHeight: '100dvh', WebkitOverflowScrolling: 'touch' }}>
       <div className="flex flex-col px-6 pt-8 pb-2 shrink-0 z-20">
         <div className="flex items-center justify-between mb-3">
           <button
@@ -1457,6 +1457,7 @@ function AddTransactionPageContent() {
 
       <div
         className="flex-1 flex flex-col w-full overflow-y-auto no-scrollbar relative z-10 pb-32"
+        style={{ WebkitOverflowScrolling: 'touch' }}
         onClick={() => setShowKeypad(false)}
       >
         <div className="flex flex-col items-center justify-center pt-10 px-4">
