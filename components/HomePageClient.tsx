@@ -84,7 +84,8 @@ const HomePageClient = memo(function HomePageClient({
       } else if (tx.payer_id === user?.id) {
         payerText = "You paid";
       } else if (tx.payer) {
-        payerText = `${tx.payer.full_name?.split(' ')[0] || tx.payer.name || "Someone"} paid`;
+        const payerName = tx.payer?.full_name || tx.payer?.name;
+        payerText = payerName ? `${String(payerName).split(' ')[0]} paid` : "Someone paid";
       }
       
       return {
@@ -113,8 +114,8 @@ const HomePageClient = memo(function HomePageClient({
         isSettlement: true,
         sortDate: new Date(s.created_at), // 以記帳時間排序
         categories: { name: 'Repayment', icon: '🤝' },
-        payer: sender,
-        payerText: payerText,
+        payer: sender || null,
+        payerText: String(payerText),
         formattedDate: new Date(s.date || s.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       };
     });
@@ -281,14 +282,14 @@ const HomePageClient = memo(function HomePageClient({
                 <TransactionCard
                   key={tx.id}
                   id={tx.id}
-                  title={tx.description || tx.categories?.name || "Transaction"}
-                  date={tx.formattedDate || new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  categoryName={tx.categories?.name || "General"}
-                  amount={tx.amount}
+                  title={String(tx.description || tx.categories?.name || "Transaction")}
+                  date={String(tx.formattedDate || new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }))}
+                  categoryName={String(tx.categories?.name || "General")}
+                  amount={Number(tx.amount) || 0}
                   amountPrefix={tx.type === 'income' ? '+' : '-'}
                   amountColor={tx.type === 'income' ? 'text-green-500' : 'text-text-main'}
-                  payerText={tx.payerText || ''}
-                  categoryIcon={tx.categories?.icon || "💰"}
+                  payerText={String(tx.payerText || '')}
+                  categoryIcon={String(tx.categories?.icon || "💰")}
                   iconBg={tx.isSettlement ? 'bg-indigo-50 dark:bg-indigo-900/20' : (tx.type === 'income' ? 'bg-green-50' : 'bg-orange-50')}
                 />
               ))

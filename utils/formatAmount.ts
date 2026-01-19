@@ -6,7 +6,7 @@
  * Format a number as currency with default options
  */
 export function formatAmount(
-  amount: number | string,
+  amount: number | string | null | undefined,
   options?: {
     prefix?: string
     suffix?: string
@@ -15,7 +15,15 @@ export function formatAmount(
     showSign?: boolean
   }
 ): string {
-  const numAmount = typeof amount === 'string' ? parseFloat(amount) : amount
+  // Handle null, undefined, or invalid input
+  if (amount == null) return '$0'
+  
+  // Convert to number
+  const numAmount = typeof amount === 'string' ? parseFloat(amount) : Number(amount)
+  
+  // Handle NaN or invalid numbers
+  if (isNaN(numAmount) || !isFinite(numAmount)) return '$0'
+  
   const {
     prefix = '$',
     suffix = '',
@@ -30,7 +38,7 @@ export function formatAmount(
   })
 
   const sign = showSign && numAmount > 0 ? '+' : ''
-  return `${sign}${prefix}${formatted}${suffix}`
+  return String(`${sign}${prefix}${formatted}${suffix}`)
 }
 
 /**
