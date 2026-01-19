@@ -424,7 +424,10 @@ export default function SettingsPage() {
 
   // Export to Excel function
   const handleExportToExcel = async () => {
-    if (!activeLedger?.id) {
+    // Use selectedBook if in member modal, otherwise use activeLedger
+    const targetBook = selectedBook || activeLedger;
+    
+    if (!targetBook?.id) {
       showAlert('Error', 'Please select an account book first');
       return;
     }
@@ -438,8 +441,8 @@ export default function SettingsPage() {
         return;
       }
 
-      const ledgerId = activeLedger.id;
-      const ledgerType = activeLedger.type;
+      const ledgerId = targetBook.id;
+      const ledgerType = targetBook.type;
       const scopeColumn = ledgerType === 'account_book' ? 'book_id' : 'ledger_id';
       const startDateStr = exportStartDate.toISOString().split('T')[0];
       const endDateStr = exportEndDate.toISOString().split('T')[0];
@@ -706,7 +709,7 @@ export default function SettingsPage() {
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
       // Generate filename
-      const fileName = `${activeLedger.name}_${startDateStr}_to_${endDateStr}.xlsx`;
+      const fileName = `${targetBook.name}_${startDateStr}_to_${endDateStr}.xlsx`;
 
       // Write file
       XLSX.writeFile(wb, fileName);
@@ -1636,23 +1639,6 @@ export default function SettingsPage() {
           </span>
         </button>
 
-        {/* Export to Excel Button */}
-        {activeLedger && (
-          <button
-            onClick={() => setShowExportModal(true)}
-            className="group flex items-center gap-4 mb-4 pl-1 w-full text-left outline-none"
-          >
-            <div className="flex items-center justify-center size-12 rounded-full bg-green-500 text-white shadow-glow hover:bg-green-600 group-hover:scale-110 group-active:scale-95 transition-all duration-300">
-              <span className="material-symbols-outlined" style={{ fontSize: "24px" }}>
-                download
-              </span>
-            </div>
-            <span className="text-lg font-bold text-slate-900 group-hover:text-green-600 transition-colors duration-200">
-              Export to Excel
-            </span>
-          </button>
-        )}
-
         <div className="flex flex-col gap-5">
           {activeBook && (
             <div className="group relative">
@@ -2338,7 +2324,7 @@ export default function SettingsPage() {
       {showExportModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setShowExportModal(false)}></div>
-          <div className="relative w-full max-w-[400px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col">
+          <div className="relative w-full max-w-[400px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col max-h-[90vh]">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="text-xl font-bold text-slate-900">Export to Excel</h3>
               <button
@@ -2362,18 +2348,11 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowExportModal(false)}
-                disabled={isExporting}
-                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
+            <div className="flex flex-col gap-3 mt-auto">
               <button
                 onClick={handleExportToExcel}
                 disabled={isExporting}
-                className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full py-3 bg-primary hover:bg-primary/90 text-white rounded-lg font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isExporting ? (
                   <>
@@ -2386,6 +2365,13 @@ export default function SettingsPage() {
                     <span>Export</span>
                   </>
                 )}
+              </button>
+              <button
+                onClick={() => setShowExportModal(false)}
+                disabled={isExporting}
+                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors disabled:opacity-50"
+              >
+                Cancel
               </button>
             </div>
           </div>
