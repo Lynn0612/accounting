@@ -2281,6 +2281,32 @@ function AddTransactionPageContent() {
             </div>
           </div>
         </div>
+
+        {/* Date */}
+        <div className="px-6 w-full mb-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-transparent hover:border-primary/10 transition-colors">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-text-muted">
+                  <span className="material-symbols-outlined">calendar_today</span>
+                </div>
+                <div>
+                  <h4 className="font-semibold text-text-main">Date</h4>
+                </div>
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowKeypad(false);
+                  setShowDatePicker(true);
+                }}
+                className="bg-transparent border-none text-right text-text-muted font-medium focus:ring-0 p-0 text-sm cursor-pointer hover:text-text-main transition-colors"
+              >
+                {formatSimpleDate(selectedDate)}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div
