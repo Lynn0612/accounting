@@ -91,12 +91,18 @@ export function formatTransactionAmount(
  * Handles expressions with operators (+, -, ×, ÷) and formats each number part
  * Note: This is for display only. The original amount string is preserved for calculations.
  */
-export function formatAmountString(amountStr: string): string {
+export function formatAmountString(amountStr: string | number | null | undefined): string {
+  // Handle null, undefined, or empty input
+  if (amountStr == null || amountStr === '') return '0'
+  
+  // Convert to string if it's a number
+  const str = typeof amountStr === 'number' ? String(amountStr) : String(amountStr)
+  
   // Handle empty or invalid input
-  if (!amountStr || amountStr.trim() === '' || amountStr === '0') return '0'
+  if (str.trim() === '' || str === '0') return '0'
   
   // Remove any existing commas (in case of re-formatting)
-  const cleanStr = amountStr.replace(/,/g, '').trim()
+  const cleanStr = str.replace(/,/g, '').trim()
   
   if (!cleanStr || cleanStr === '0') return '0'
   
@@ -114,30 +120,32 @@ export function formatAmountString(amountStr: string): string {
       if (!trimmed) return part
       
       const num = parseFloat(trimmed)
-      if (isNaN(num) || !isFinite(num)) return part
+      if (isNaN(num) || !isFinite(num)) return String(part)
       
       // Preserve decimal places if present in original
       const hasDecimal = trimmed.includes('.')
       const decimalPlaces = hasDecimal ? trimmed.split('.')[1]?.length || 0 : 0
       
-      return num.toLocaleString('en-US', {
+      const formatted = num.toLocaleString('en-US', {
         minimumFractionDigits: hasDecimal ? Math.min(decimalPlaces, 2) : 0,
         maximumFractionDigits: 2,
       })
+      return String(formatted)
     }).join('')
   }
   
   // Simple number formatting
   const num = parseFloat(cleanStr)
-  if (isNaN(num) || !isFinite(num)) return amountStr
+  if (isNaN(num) || !isFinite(num)) return String(str)
   
   // Preserve decimal places if present
   const hasDecimal = cleanStr.includes('.')
   const decimalPlaces = hasDecimal ? cleanStr.split('.')[1]?.length || 0 : 0
   
-  return num.toLocaleString('en-US', {
+  const formatted = num.toLocaleString('en-US', {
     minimumFractionDigits: hasDecimal ? Math.min(decimalPlaces, 2) : 0,
     maximumFractionDigits: 2,
   })
+  return String(formatted)
 }
 

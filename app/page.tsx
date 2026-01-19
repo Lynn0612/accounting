@@ -27,8 +27,14 @@ async function getDashboardData() {
           // 解析 JWT payload（base64url decode）
           const parts = accessToken.split('.');
           if (parts.length === 3) {
+            // Handle base64url decoding safely
+            let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            // Add padding if needed
+            while (base64.length % 4) {
+              base64 += '=';
+            }
             const payload = JSON.parse(
-              Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()
+              Buffer.from(base64, 'base64').toString()
             );
             userId = payload.sub || null;
           }

@@ -1468,7 +1468,7 @@ export default function EditTransactionPage() {
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto no-scrollbar pb-32 px-6" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <main className="flex-1 overflow-y-auto no-scrollbar pb-32 px-6" style={{ WebkitOverflowScrolling: 'touch' as any }}>
             <div className="mt-4 mb-8 text-center relative z-[101]">
               <div className="flex items-center justify-center gap-3 mx-auto w-full max-w-[320px]">
                 <span className="text-3xl font-bold text-primary">$</span>
