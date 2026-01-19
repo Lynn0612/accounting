@@ -2145,6 +2145,28 @@ export default function SettingsPage() {
                   </label>
                 </div>
               </section>
+              
+              {/* Export to Excel Button */}
+              <div className="space-y-1.5 mt-4">
+                <label className="px-1 text-xs font-bold tracking-wider text-gray-500 uppercase">Export Data</label>
+                <button
+                  onClick={() => setShowExportModal(true)}
+                  className="w-full flex items-center justify-between px-5 py-4 bg-white border-0 shadow-[0_2px_8px_rgba(0,0,0,0.02)] rounded-lg hover:bg-gray-50 transition-colors group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center size-10 rounded-full bg-green-500 text-white shadow-sm group-hover:bg-green-600 transition-colors">
+                      <span className="material-symbols-outlined" style={{ fontSize: "20px" }}>
+                        download
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <span className="text-base font-bold text-gray-900">Export to Excel</span>
+                      <span className="text-xs text-gray-500">Download transaction data</span>
+                    </div>
+                  </div>
+                  <span className="material-symbols-outlined text-gray-400" style={{ fontSize: "20px" }}>chevron_right</span>
+                </button>
+              </div>
             </main>
             <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto z-30 p-5 bg-gradient-to-t from-background-light via-background-light to-transparent pt-6 pb-6">
               <button
@@ -2348,7 +2370,14 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <div className="flex flex-col gap-3 mt-auto">
+            <div className="flex flex-col gap-3 mt-auto pt-4">
+              <button
+                onClick={() => setShowExportModal(false)}
+                disabled={isExporting}
+                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
               <button
                 onClick={handleExportToExcel}
                 disabled={isExporting}
@@ -2365,13 +2394,6 @@ export default function SettingsPage() {
                     <span>Export</span>
                   </>
                 )}
-              </button>
-              <button
-                onClick={() => setShowExportModal(false)}
-                disabled={isExporting}
-                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold transition-colors disabled:opacity-50"
-              >
-                Cancel
               </button>
             </div>
           </div>
