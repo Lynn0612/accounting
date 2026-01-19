@@ -1782,24 +1782,22 @@ export default function EditTransactionPage() {
           )}
 
           {showKeypad && (
-            <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-none">
-              <div
-                className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity pointer-events-auto"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowKeypad(false)
-                }}
-              ></div>
-              <div className="relative w-full max-w-md pointer-events-auto z-[101]">
-                <NumericKeypad
-                  onInput={handleKeypadInput}
-                  onClear={handleClear}
-                  onBackspace={handleBackspace}
-                  onCalculate={handleCalculate}
-                  onSave={handleConfirmAmount}
-                  canSave={true}
-                />
-              </div>
+            <div
+              className={`fixed bottom-0 left-0 right-0 max-w-md mx-auto transition-all duration-300 ease-in-out z-[100] ${
+                showKeypad
+                  ? "translate-y-0 opacity-100"
+                  : "translate-y-full opacity-0 pointer-events-none"
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <NumericKeypad
+                onInput={handleKeypadInput}
+                onClear={handleClear}
+                onBackspace={handleBackspace}
+                onCalculate={handleCalculate}
+                onSave={handleConfirmAmount}
+                canSave={true}
+              />
             </div>
           )}
         </div>
@@ -2670,26 +2668,22 @@ export default function EditTransactionPage() {
       )}
 
       {showKeypad && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center pointer-events-none">
-          <div 
-            className="absolute inset-0 bg-black/20 backdrop-blur-sm transition-opacity pointer-events-auto"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowKeypad(false);
-              setEditingAmountType(null);
-              setEditingAmountId(null);
-            }}
-          ></div>
-          <div className="relative w-full max-w-md pointer-events-auto z-[101]">
-            <NumericKeypad
-              onInput={handleKeypadInput}
-              onClear={handleClear}
-              onBackspace={handleBackspace}
-              onCalculate={handleCalculate}
-              onSave={handleConfirmAmount}
-              canSave={isValidAmount()}
-            />
-          </div>
+        <div
+          className={`fixed bottom-0 left-0 right-0 max-w-md mx-auto transition-all duration-300 ease-in-out z-[100] ${
+            showKeypad
+              ? "translate-y-0 opacity-100"
+              : "translate-y-full opacity-0 pointer-events-none"
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <NumericKeypad
+            onInput={handleKeypadInput}
+            onClear={handleClear}
+            onBackspace={handleBackspace}
+            onCalculate={handleCalculate}
+            onSave={handleConfirmAmount}
+            canSave={isValidAmount()}
+          />
         </div>
       )}
     </div>
