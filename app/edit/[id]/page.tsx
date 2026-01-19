@@ -17,6 +17,7 @@ import { useCurrentUserRole } from '@/hooks/useCurrentUserRole'
 import ErrorToast from '@/components/ErrorToast'
 import { formatSimpleDate } from '@/utils/date'
 import Loading from '@/components/Loading'
+import { formatAmountString } from '@/utils/formatAmount'
 
 interface Participant {
   id: string
@@ -1745,7 +1746,7 @@ export default function EditTransactionPage() {
                 transactionType === 'expense' ? 'text-gray-500' : 'text-primary'
               }`}
             >
-              {amount}
+              {formatAmountString(amount)}
             </div>
           </div>
 

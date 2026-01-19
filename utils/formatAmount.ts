@@ -86,3 +86,58 @@ export function formatTransactionAmount(
   })
 }
 
+/**
+ * Format amount string for display with thousand separators
+ * Handles expressions with operators (+, -, ×, ÷) and formats each number part
+ * Note: This is for display only. The original amount string is preserved for calculations.
+ */
+export function formatAmountString(amountStr: string): string {
+  // Handle empty or invalid input
+  if (!amountStr || amountStr.trim() === '' || amountStr === '0') return '0'
+  
+  // Remove any existing commas (in case of re-formatting)
+  const cleanStr = amountStr.replace(/,/g, '').trim()
+  
+  if (!cleanStr || cleanStr === '0') return '0'
+  
+  // Check if it contains operators
+  if (/[+\-×÷]/.test(cleanStr)) {
+    // Split by operators and format each numeric part
+    const parts = cleanStr.split(/([+\-×÷])/)
+    return parts.map((part) => {
+      // Keep operators as-is
+      if (['+', '-', '×', '÷'].includes(part)) {
+        return part
+      }
+      // Format numeric part
+      const trimmed = part.trim()
+      if (!trimmed) return part
+      
+      const num = parseFloat(trimmed)
+      if (isNaN(num) || !isFinite(num)) return part
+      
+      // Preserve decimal places if present in original
+      const hasDecimal = trimmed.includes('.')
+      const decimalPlaces = hasDecimal ? trimmed.split('.')[1]?.length || 0 : 0
+      
+      return num.toLocaleString('en-US', {
+        minimumFractionDigits: hasDecimal ? Math.min(decimalPlaces, 2) : 0,
+        maximumFractionDigits: 2,
+      })
+    }).join('')
+  }
+  
+  // Simple number formatting
+  const num = parseFloat(cleanStr)
+  if (isNaN(num) || !isFinite(num)) return amountStr
+  
+  // Preserve decimal places if present
+  const hasDecimal = cleanStr.includes('.')
+  const decimalPlaces = hasDecimal ? cleanStr.split('.')[1]?.length || 0 : 0
+  
+  return num.toLocaleString('en-US', {
+    minimumFractionDigits: hasDecimal ? Math.min(decimalPlaces, 2) : 0,
+    maximumFractionDigits: 2,
+  })
+}
+

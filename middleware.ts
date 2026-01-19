@@ -71,7 +71,7 @@ export async function middleware(request: NextRequest) {
                 path: '/',
               })
             } else {
-              response.cookies.set(name, value, options)
+            response.cookies.set(name, value, options)
             }
           })
         },
@@ -118,7 +118,7 @@ export async function middleware(request: NextRequest) {
     data: { session },
     error: sessionError
   } = await supabase.auth.getSession()
-
+  
   // Debug: 記錄 Supabase user 和 session
   console.log('Middleware Supabase auth:', {
     hasUser: !!user,
@@ -186,7 +186,7 @@ export async function middleware(request: NextRequest) {
     } else if (existingDestination) {
       redirectUrl.searchParams.set('destination', existingDestination)
     } else {
-      redirectUrl.searchParams.set('redirect', pathname)
+    redirectUrl.searchParams.set('redirect', pathname)
     }
   }
   

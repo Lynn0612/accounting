@@ -18,6 +18,7 @@ import { useUser as useUserHook } from "@/hooks/useUser";
 import { formatSimpleDate } from "@/utils/date";
 import LedgerDropdown from "@/components/LedgerDropdown";
 import Loading from "@/components/Loading";
+import { formatAmountString } from "@/utils/formatAmount";
 
 interface Participant {
   id: string;
@@ -1473,7 +1474,7 @@ function AddTransactionPageContent() {
               }`}
             >
               <span className="text-3xl mt-2 font-bold">$</span>
-              <span>{amount}</span>
+              <span>{formatAmountString(amount)}</span>
             </h1>
           </div>
         </div>
@@ -1491,7 +1492,7 @@ function AddTransactionPageContent() {
                     <span>{splitSummary.payer.name[0]}</span>
                   )}
                 </div>
-                <span className="text-text-main">${splitSummary.payer.amount.toFixed(0)}</span>
+                <span className="text-text-main">${splitSummary.payer.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
               </div>
             </div>
 
@@ -1512,7 +1513,7 @@ function AddTransactionPageContent() {
                         <span>{debtor.name[0]}</span>
                       )}
                     </div>
-                    <span className="text-text-main font-semibold">${debtor.amount.toFixed(0)}</span>
+                    <span className="text-text-main font-semibold">${debtor.amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                   </div>
                 ))}
               </div>

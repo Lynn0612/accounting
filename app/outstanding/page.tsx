@@ -306,7 +306,7 @@ export default function OutstandingPage() {
                     <h3 className="font-bold text-text-main text-sm truncate">{item.name}</h3>
                   </div>
                   <div className="text-right ml-2">
-                    <span className="block font-bold text-red-500 text-base">-${item.amount.toFixed(2)}</span>
+                    <span className="block font-bold text-red-500 text-base">-${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               </div>
@@ -339,7 +339,7 @@ export default function OutstandingPage() {
                     <h3 className="font-bold text-text-main text-sm truncate">{item.name}</h3>
                   </div>
                   <div className="text-right ml-2">
-                    <span className="block font-bold text-primary text-base">+${item.amount.toFixed(2)}</span>
+                    <span className="block font-bold text-primary text-base">+${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
               </div>
