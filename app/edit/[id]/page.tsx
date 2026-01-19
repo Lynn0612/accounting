@@ -346,16 +346,50 @@ export default function EditTransactionPage() {
     }
   }, [isMultiMemberLedger, incomeMode, payerId, user?.id])
 
-  // Scroll to editing input when keypad opens
+  // Scroll to editing input when keypad opens - ensure input is visible above keypad
   useEffect(() => {
     if (showKeypad && editingInputRef.current) {
       setTimeout(() => {
-        editingInputRef.current?.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'center',
-          inline: 'nearest'
-        });
-      }, 100);
+        const inputElement = editingInputRef.current;
+        if (inputElement) {
+          const keypadHeight = 400; // Approximate keypad height
+          const extraPadding = 100; // Extra space above input to ensure it's fully visible
+          
+          // Find the scrollable container
+          let scrollContainer: HTMLElement | null = inputElement.closest('.overflow-y-auto') as HTMLElement;
+          if (!scrollContainer) {
+            scrollContainer = document.querySelector('.overflow-y-auto') as HTMLElement;
+          }
+          
+          if (scrollContainer) {
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const inputRect = inputElement.getBoundingClientRect();
+            const currentScrollTop = scrollContainer.scrollTop;
+            
+            // Calculate input's position relative to container
+            const inputRelativeTop = inputRect.top - containerRect.top + currentScrollTop;
+            
+            // Calculate target scroll position: input should be at top 1/3 of visible area (above keypad)
+            const visibleHeight = containerRect.height - keypadHeight;
+            const targetScrollTop = inputRelativeTop - (visibleHeight / 3) - extraPadding;
+            
+            scrollContainer.scrollTo({
+              top: Math.max(0, targetScrollTop),
+              behavior: 'smooth'
+            });
+          } else {
+            // Fallback to window scroll
+            const inputRect = inputElement.getBoundingClientRect();
+            const visibleHeight = window.innerHeight - keypadHeight;
+            const targetScrollTop = inputRect.top + window.scrollY - (visibleHeight / 3) - extraPadding;
+            
+            window.scrollTo({
+              top: Math.max(0, targetScrollTop),
+              behavior: 'smooth'
+            });
+          }
+        }
+      }, 200);
     }
   }, [showKeypad, editingAmountType, editingAmountId]);
 
