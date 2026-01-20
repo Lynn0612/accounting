@@ -419,7 +419,7 @@ function ComparePageContent() {
           </button>
           <h1 className="text-xl font-bold text-text-main tracking-tight">
             {showSharedExpenseOnly && statType === 'expense' 
-              ? 'Compare Public Expense (公費比較)' 
+              ? 'Compare Public Expense' 
               : statType === 'expense' 
                 ? 'Compare Spending' 
                 : 'Compare Income'
