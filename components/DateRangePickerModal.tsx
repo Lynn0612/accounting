@@ -27,18 +27,31 @@ export default function DateRangePickerModal({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selecting, setSelecting] = useState<"start" | "end">("start");
 
+  const [hasInitialized, setHasInitialized] = useState(false);
+
   useEffect(() => {
-    if (initialStartDate) setStartDate(initialStartDate);
-    if (initialEndDate) setEndDate(initialEndDate);
-    if (initialStartDate) setCurrentMonth(new Date(initialStartDate));
-    // Reset to initial state when modal opens - if both dates are set, allow editing
-    if (initialStartDate && initialEndDate) {
-      // Both dates are provided, keep them
-    } else if (initialStartDate) {
-      // Only start date is provided, clear end
-      setEndDate(null);
+    // Only initialize once when modal opens (isOpen changes from false to true)
+    // This prevents resetting user's selection while they're selecting
+    if (isOpen && !hasInitialized) {
+      // Always reset to initial values when modal first opens
+      if (initialStartDate) {
+        const startOnly = new Date(initialStartDate.getFullYear(), initialStartDate.getMonth(), initialStartDate.getDate());
+        setStartDate(startOnly);
+        setCurrentMonth(new Date(initialStartDate));
+      }
+      if (initialEndDate) {
+        const endOnly = new Date(initialEndDate.getFullYear(), initialEndDate.getMonth(), initialEndDate.getDate());
+        setEndDate(endOnly);
+      } else if (initialStartDate) {
+        // Only start date is provided, clear end to allow range selection
+        setEndDate(null);
+      }
+      setHasInitialized(true);
+    } else if (!isOpen) {
+      // Reset initialization flag when modal closes
+      setHasInitialized(false);
     }
-  }, [initialStartDate, initialEndDate, isOpen]);
+  }, [isOpen, initialStartDate, initialEndDate, hasInitialized]); // Include dependencies to reset when modal opens
 
   const generateDaysInMonth = useCallback((year: number, month: number) => {
     const firstDay = new Date(year, month, 1).getDay();
@@ -101,7 +114,15 @@ export default function DateRangePickerModal({
   };
 
   const handleConfirm = () => {
-    onConfirm(startDate, endDate);
+    if (!startDate) return;
+    // If endDate is not set, use startDate as endDate (single day range)
+    const finalEndDate = endDate || startDate;
+    // Normalize dates to ensure only date part is used
+    const startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endOnly = new Date(finalEndDate.getFullYear(), finalEndDate.getMonth(), finalEndDate.getDate());
+    // Ensure endDate is not before startDate
+    const safeEndDate = endOnly < startOnly ? startOnly : endOnly;
+    onConfirm(startOnly, safeEndDate);
     onClose();
   };
 
