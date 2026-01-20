@@ -444,8 +444,17 @@ export default function SettingsPage() {
       const ledgerId = targetBook.id;
       const ledgerType = targetBook.type;
       const scopeColumn = ledgerType === 'account_book' ? 'book_id' : 'ledger_id';
-      const startDateStr = exportStartDate.toISOString().split('T')[0];
-      const endDateStr = exportEndDate.toISOString().split('T')[0];
+      
+      // Fix 1: Use local date formatting to avoid timezone shifts
+      const formatLocalDate = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      
+      const startDateStr = formatLocalDate(exportStartDate);
+      const endDateStr = formatLocalDate(exportEndDate);
 
       // Fetch all participants for name mapping
       const { data: participants } = await supabase
@@ -550,6 +559,8 @@ export default function SettingsPage() {
       // Track member balances for final settlement
       const memberPaid = new Map<string, number>(); // Total paid by member (as payer)
       const memberSplit = new Map<string, number>(); // Total split amount assigned to member
+      const memberRepaid = new Map<string, number>(); // Amount member paid as sender (Repaid)
+      const memberReceived = new Map<string, number>(); // Amount member received as receiver (Received)
 
       (transactions || []).forEach((tx: any) => {
         const date = new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -643,25 +654,26 @@ export default function SettingsPage() {
         incomes.push({
           Date: date,
           'Member Name': receiverName,
+          Category: 'Repayment',
           Note: s.note || `Repayment from ${senderName} to ${receiverName}`,
           'Income Amount': 0,
           'Top-up Amount': 0,
           'Repayment Amount': amount
         });
 
-        // Track repayments in member balances
+        // Track repayments for settlement (Fix 4)
         const receiverId = s.receiver_id;
+        const senderId = s.sender_id;
+        
         if (receiverId && participantMap.has(receiverId)) {
-          // Receiving repayment reduces what they owe
-          memberSplit.set(receiverId, (memberSplit.get(receiverId) || 0) - amount);
+          memberReceived.set(receiverId, (memberReceived.get(receiverId) || 0) + amount);
         }
-        if (s.sender_id && participantMap.has(s.sender_id)) {
-          // Paying repayment increases what they paid
-          memberPaid.set(s.sender_id, (memberPaid.get(s.sender_id) || 0) + amount);
+        if (senderId && participantMap.has(senderId)) {
+          memberRepaid.set(senderId, (memberRepaid.get(senderId) || 0) + amount);
         }
       });
 
-      // Calculate previous period for comparison (equivalent period before the selected range)
+      // Fix 2: Calculate previous period for comparison (equivalent period before the selected range)
       // Example: If user selects Jan 1-31, calculate Dec 1-31
       const periodDays = Math.ceil((exportEndDate.getTime() - exportStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       
@@ -673,10 +685,10 @@ export default function SettingsPage() {
       const prevStartDate = new Date(prevEndDate);
       prevStartDate.setDate(prevStartDate.getDate() - periodDays + 1);
       
-      const prevStartDateStr = prevStartDate.toISOString().split('T')[0];
-      const prevEndDateStr = prevEndDate.toISOString().split('T')[0];
+      const prevStartDateStr = formatLocalDate(prevStartDate);
+      const prevEndDateStr = formatLocalDate(prevEndDate);
 
-      // Fetch previous period transactions for comparison
+      // Fetch previous period transactions for comparison (Fix 2: Actually fetch data)
       const { data: prevTransactions } = await supabase
         .from('transactions')
         .select('amount, category_id, type, categories (name)')
@@ -686,9 +698,11 @@ export default function SettingsPage() {
 
       const prevCategoryTotals = new Map<string, number>();
       (prevTransactions || []).forEach((tx: any) => {
-        const categoryName = tx.categories?.name || 'Other';
-        const amount = Number(tx.amount || 0);
-        prevCategoryTotals.set(categoryName, (prevCategoryTotals.get(categoryName) || 0) + amount);
+        if (tx.type === 'expense') { // Only count expenses for comparison
+          const categoryName = tx.categories?.name || 'Other';
+          const amount = Number(tx.amount || 0);
+          prevCategoryTotals.set(categoryName, (prevCategoryTotals.get(categoryName) || 0) + amount);
+        }
       });
 
       // Prepare summary data
@@ -715,7 +729,7 @@ export default function SettingsPage() {
 
       // Add totals row
       summary.push({
-        'Rank (No.)': '',
+        'TOP': '',
         Category: 'TOTAL',
         'Total Amount': totalExpense,
         'Percentage (%)': '100.00%',
@@ -725,7 +739,7 @@ export default function SettingsPage() {
 
       // Add empty row
       summary.push({
-        'Rank (No.)': '',
+        'TOP': '',
         Category: '',
         'Total Amount': '',
         'Percentage (%)': '',
@@ -735,7 +749,7 @@ export default function SettingsPage() {
 
       // Add Public Fund Category Ranking
       summary.push({
-        'Rank (No.)': '',
+        'TOP': '',
         Category: '=== PUBLIC FUND CATEGORY RANKING ===',
         'Total Amount': '',
         'Percentage (%)': '',
@@ -751,7 +765,7 @@ export default function SettingsPage() {
       sortedPublicCategories.forEach(([category, data], index) => {
         const percentage = totalPublicExpense > 0 ? ((data.amount / totalPublicExpense) * 100).toFixed(2) : '0.00';
         summary.push({
-          'Rank (No.)': index + 1,
+          'TOP': index + 1,
           Category: category,
           'Total Amount': data.amount,
           'Percentage (%)': `${percentage}%`,
@@ -763,7 +777,7 @@ export default function SettingsPage() {
       // Add public fund total
       if (sortedPublicCategories.length > 0) {
         summary.push({
-          'Rank (No.)': '',
+          'TOP': '',
           Category: 'PUBLIC FUND TOTAL',
           'Total Amount': totalPublicExpense,
           'Percentage (%)': '100.00%',
@@ -774,7 +788,7 @@ export default function SettingsPage() {
 
       // Add empty row
       summary.push({
-        'Rank (No.)': '',
+        'TOP': '',
         Category: '',
         'Total Amount': '',
         'Percentage (%)': '',
@@ -782,28 +796,45 @@ export default function SettingsPage() {
         'Comparison (%)': ''
       });
 
-      // Add Final Settlement section
+      // Fix 4: Redesign Final Settlement section with clear debt tracking
       summary.push({
-        'Rank (No.)': '',
-        Category: '=== FINAL SETTLEMENT (Positive = Receive / Negative = Pay) ===',
+        'TOP': '',
+        Category: '=== FINAL SETTLEMENT (待結算) ===',
         'Total Amount': '',
         'Percentage (%)': '',
         'Transaction Count': '',
         'Comparison (%)': ''
       });
 
-      // Calculate net balance for each member
+      // Add header row for settlement table
+      summary.push({
+        'TOP': '',
+        Category: 'Member Name',
+        'Total Amount': 'Total Advanced (墊付總額)',
+        'Percentage (%)': 'Total Share (應付總額)',
+        'Transaction Count': 'Repaid/Received (已還款/收款)',
+        'Comparison (%)': 'Outstanding Balance (待結算)'
+      });
+
+      // Calculate settlement for each member
       memberIds.forEach(({ id, name }) => {
-        const paid = memberPaid.get(id) || 0;
-        const split = memberSplit.get(id) || 0;
-        const netBalance = paid - split;
+        const advanced = memberPaid.get(id) || 0; // Total Advanced (墊付總額)
+        const share = memberSplit.get(id) || 0; // Total Share (應付總額)
+        const repaid = memberRepaid.get(id) || 0; // Amount member paid (Repaid)
+        const received = memberReceived.get(id) || 0; // Amount member received (Received)
+        
+        // Outstanding Balance = (Advanced - Share) + (Received - Repaid)
+        const outstandingBalance = (advanced - share) + (received - repaid);
+        
+        const status = outstandingBalance >= 0 ? 'To Receive (別人欠我)' : 'To Pay (需還別人)';
+        
         summary.push({
-          'Rank (No.)': '',
+          'TOP': '',
           Category: name,
-          'Total Amount': netBalance,
-          'Percentage (%)': `Paid: ${paid.toFixed(2)}, Split: ${split.toFixed(2)}`,
-          'Transaction Count': '',
-          'Comparison (%)': netBalance >= 0 ? 'Receive' : 'Pay'
+          'Total Amount': advanced,
+          'Percentage (%)': share,
+          'Transaction Count': `Repaid: ${repaid.toFixed(2)}, Received: ${received.toFixed(2)}`,
+          'Comparison (%)': `${outstandingBalance.toFixed(2)} (${status})`
         });
       });
 
@@ -835,14 +866,44 @@ export default function SettingsPage() {
           wsExpenses[cellAddress].s.font = { bold: true };
         }
       }
+
+      // Make total row bold
+      if (expenses.length > 0) {
+        const totalRowIndex = expenses.length - 1;
+        for (let col = expenseRange.s.c; col <= expenseRange.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: col });
+          if (wsExpenses[cellAddress]) {
+            if (!wsExpenses[cellAddress].s) wsExpenses[cellAddress].s = {};
+            wsExpenses[cellAddress].s.font = { bold: true };
+          }
+        }
+      }
       
       XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expenses');
+
+      // Fix 3: Add totals row to Incomes sheet
+      if (incomes.length > 0) {
+        const incomeKeys = Object.keys(incomes[0]);
+        const totalRow: any = {};
+        incomeKeys.forEach(key => {
+          if (key === 'Date' || key === 'Member Name' || key === 'Category' || key === 'Note') {
+            totalRow[key] = key === 'Category' ? 'TOTAL' : '';
+          } else if (typeof incomes[0][key] === 'number') {
+            // Sum all numeric columns
+            totalRow[key] = incomes.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
+          } else {
+            totalRow[key] = '';
+          }
+        });
+        incomes.push(totalRow);
+      }
 
       // Sheet 2: Incomes & Top-ups
       const wsIncomes = XLSX.utils.json_to_sheet(incomes);
       wsIncomes['!cols'] = [
         { wch: 12 }, // Date
         { wch: 18 }, // Member Name
+        { wch: 15 }, // Category
         { wch: 25 }, // Note
         { wch: 15 }, // Income Amount
         { wch: 15 }, // Top-up Amount
@@ -858,18 +919,30 @@ export default function SettingsPage() {
           wsIncomes[cellAddress].s.font = { bold: true };
         }
       }
+
+      // Make total row bold
+      if (incomes.length > 0) {
+        const totalRowIndex = incomes.length - 1;
+        for (let col = incomeRange.s.c; col <= incomeRange.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: col });
+          if (wsIncomes[cellAddress]) {
+            if (!wsIncomes[cellAddress].s) wsIncomes[cellAddress].s = {};
+            wsIncomes[cellAddress].s.font = { bold: true };
+          }
+        }
+      }
       
       XLSX.utils.book_append_sheet(wb, wsIncomes, 'Incomes & Top-ups');
 
       // Sheet 3: Summary
       const wsSummary = XLSX.utils.json_to_sheet(summary);
       wsSummary['!cols'] = [
-        { wch: 10 }, // Rank (No.)
+        { wch: 8 },  // TOP
         { wch: 30 }, // Category (wider for section headers)
-        { wch: 15 }, // Total Amount
-        { wch: 15 }, // Percentage
-        { wch: 18 }, // Transaction Count
-        { wch: 20 }  // Comparison / Notes
+        { wch: 18 }, // Total Amount
+        { wch: 18 }, // Percentage / Total Advanced
+        { wch: 25 }, // Transaction Count / Total Share / Repaid/Received
+        { wch: 35 }  // Comparison / Outstanding Balance
       ];
       
       // Make header row bold
@@ -882,15 +955,24 @@ export default function SettingsPage() {
         }
       }
 
-      // Make section headers and totals bold
+      // Make section headers and totals bold with borders (Fix 5)
       summary.forEach((row, index) => {
         const rowIndex = index + 1; // +1 because header is row 0
-        if (row.Category && (
+        const isSectionHeader = row.Category && (
           row.Category.includes('===') ||
           row.Category === 'TOTAL' ||
           row.Category === 'PUBLIC FUND TOTAL' ||
-          (row['Rank (No.)'] === '' && row.Category !== '')
-        )) {
+          row.Category === 'Member Name'
+        );
+        const isSettlementRow = row.Category && 
+          !row.Category.includes('===') && 
+          row.Category !== 'TOTAL' && 
+          row.Category !== 'PUBLIC FUND TOTAL' &&
+          row.Category !== 'Member Name' &&
+          row.Category !== '' &&
+          row['TOP'] === '';
+        
+        if (isSectionHeader || isSettlementRow) {
           for (let col = summaryRange.s.c; col <= summaryRange.e.c; col++) {
             const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: col });
             const colKey = Object.keys(row)[col];
@@ -899,7 +981,18 @@ export default function SettingsPage() {
                 wsSummary[cellAddress] = { v: row[colKey] };
               }
               if (!wsSummary[cellAddress].s) wsSummary[cellAddress].s = {};
-              wsSummary[cellAddress].s.font = { bold: true };
+              wsSummary[cellAddress].s.font = { bold: isSectionHeader };
+              
+              // Add borders for settlement section (Fix 5)
+              if (row.Category === 'Member Name' || isSettlementRow) {
+                wsSummary[cellAddress].s.border = {
+                  top: { style: 'thin' },
+                  bottom: { style: 'thin' },
+                  left: { style: 'thin' },
+                  right: { style: 'thin' }
+                };
+              }
+              
               if (row.Category.includes('===') || row.Category === 'TOTAL' || row.Category === 'PUBLIC FUND TOTAL') {
                 wsSummary[cellAddress].s.fill = { fgColor: { rgb: 'E0E0E0' } };
               }
@@ -910,7 +1003,7 @@ export default function SettingsPage() {
 
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
-      // Generate filename
+      // Generate filename using local date format (Fix 1)
       const fileName = `${targetBook.name}_${startDateStr}_to_${endDateStr}.xlsx`;
 
       // Write file with cell styles enabled
