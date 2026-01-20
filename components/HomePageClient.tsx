@@ -255,7 +255,7 @@ const HomePageClient = memo(function HomePageClient({
         {participants.length > 1 && (
           <div className="mt-6">
             <div className="bg-white rounded-card p-5 shadow-soft flex flex-col">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
                     <span className="material-symbols-outlined">groups</span>

@@ -2376,6 +2376,20 @@ export default function SettingsPage() {
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                   </label>
                 </div>
+                <a
+                  href="https://line.me/R/ti/p/@954bctos"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-[#06C755] bg-[#06C755]/5 hover:bg-[#06C755]/10 transition-all active:scale-[0.98]"
+                >
+                  <span className="material-symbols-outlined text-[#06C755]" style={{ fontSize: "20px" }}>
+                    person_add
+                  </span>
+                  <span className="text-[#06C755] font-bold text-sm">Add Bot as Friend</span>
+                </a>
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  You need to add the bot as a friend to receive notifications
+                </p>
               </section>
             </main>
             <div className="fixed bottom-0 left-0 right-0 max-w-md mx-auto z-30 p-5 bg-gradient-to-t from-background-light via-background-light to-transparent pt-10 pb-6 pointer-events-none">
@@ -2633,6 +2647,20 @@ export default function SettingsPage() {
                     <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                   </label>
                 </div>
+                <a
+                  href="https://line.me/R/ti/p/@954bctos"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-[#06C755] bg-[#06C755]/5 hover:bg-[#06C755]/10 transition-all active:scale-[0.98]"
+                >
+                  <span className="material-symbols-outlined text-[#06C755]" style={{ fontSize: "20px" }}>
+                    person_add
+                  </span>
+                  <span className="text-[#06C755] font-bold text-sm">Add Bot as Friend</span>
+                </a>
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  You need to add the bot as a friend to receive notifications
+                </p>
               </section>
               
               {/* Export to Excel Button */}
