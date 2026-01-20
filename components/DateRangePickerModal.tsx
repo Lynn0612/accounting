@@ -26,12 +26,15 @@ export default function DateRangePickerModal({
   );
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selecting, setSelecting] = useState<"start" | "end">("start");
+  const [isFirstClick, setIsFirstClick] = useState(true);
 
   useEffect(() => {
     if (initialStartDate) setStartDate(initialStartDate);
     if (initialEndDate) setEndDate(initialEndDate);
     if (initialStartDate) setCurrentMonth(new Date(initialStartDate));
-  }, [initialStartDate, initialEndDate]);
+    // Reset first click state when modal opens
+    setIsFirstClick(true);
+  }, [initialStartDate, initialEndDate, isOpen]);
 
   const generateDaysInMonth = useCallback((year: number, month: number) => {
     const firstDay = new Date(year, month, 1).getDay();
@@ -69,20 +72,31 @@ export default function DateRangePickerModal({
     const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
     const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
 
-    // If start and end are the same (initial state or just reset), clicking any date sets both
-    if (startDateOnly.getTime() === endDateOnly.getTime()) {
+    // Check if this is the first click in the current session (start and end are same)
+    const isRangeNotSet = startDateOnly.getTime() === endDateOnly.getTime();
+
+    if (isRangeNotSet || isFirstClick) {
+      // First click: set both start and end to clicked date
       setStartDate(clickedDateOnly);
       setEndDate(clickedDateOnly);
+      setIsFirstClick(false);
       setSelecting("end");
     } else {
-      // If start and end are different, clicking a date will:
-      // - If clicked date is before or equal to start, set as new start (and end = start)
-      // - If clicked date is after start, set as end
-      if (clickedDateOnly <= startDateOnly) {
+      // Range is already set (start and end are different)
+      // If clicked date is before start, reset range with new start
+      if (clickedDateOnly < startDateOnly) {
         setStartDate(clickedDateOnly);
         setEndDate(clickedDateOnly);
         setSelecting("end");
-      } else {
+      } 
+      // If clicked date is same as start, do nothing (or could set end = start to reset)
+      else if (clickedDateOnly.getTime() === startDateOnly.getTime()) {
+        // Do nothing, or reset to single day
+        setEndDate(clickedDateOnly);
+        setSelecting("end");
+      }
+      // If clicked date is after start, set as end
+      else {
         setEndDate(clickedDateOnly);
         setSelecting("start");
       }
