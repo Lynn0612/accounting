@@ -18,22 +18,26 @@ export default function DateRangePickerModal({
   initialStartDate,
   initialEndDate,
 }: DateRangePickerModalProps) {
-  const [startDate, setStartDate] = useState<Date>(
+  const [startDate, setStartDate] = useState<Date | null>(
     initialStartDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   );
-  const [endDate, setEndDate] = useState<Date>(
+  const [endDate, setEndDate] = useState<Date | null>(
     initialEndDate || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)
   );
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selecting, setSelecting] = useState<"start" | "end">("start");
-  const [isFirstClick, setIsFirstClick] = useState(true);
 
   useEffect(() => {
     if (initialStartDate) setStartDate(initialStartDate);
     if (initialEndDate) setEndDate(initialEndDate);
     if (initialStartDate) setCurrentMonth(new Date(initialStartDate));
-    // Reset first click state when modal opens
-    setIsFirstClick(true);
+    // Reset to initial state when modal opens - if both dates are set, allow editing
+    if (initialStartDate && initialEndDate) {
+      // Both dates are provided, keep them
+    } else if (initialStartDate) {
+      // Only start date is provided, clear end
+      setEndDate(null);
+    }
   }, [initialStartDate, initialEndDate, isOpen]);
 
   const generateDaysInMonth = useCallback((year: number, month: number) => {
@@ -69,37 +73,30 @@ export default function DateRangePickerModal({
 
     // Normalize dates to compare only the date part (ignore time)
     const clickedDateOnly = new Date(clickedDate.getFullYear(), clickedDate.getMonth(), clickedDate.getDate());
-    const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-    const endDateOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
-
-    // Check if this is the first click in the current session (start and end are same)
-    const isRangeNotSet = startDateOnly.getTime() === endDateOnly.getTime();
-
-    if (isRangeNotSet || isFirstClick) {
-      // First click: set both start and end to clicked date
+    
+    // Use the same logic as DateRangePicker - simpler and works across months
+    if (!startDate || (startDate && endDate)) {
+      // No start date, or both dates are set - start a new range
       setStartDate(clickedDateOnly);
-      setEndDate(clickedDateOnly);
-      setIsFirstClick(false);
+      setEndDate(null);
       setSelecting("end");
-    } else {
-      // Range is already set (start and end are different)
-      // If clicked date is before start, reset range with new start
+    } else if (startDate && !endDate) {
+      // Start date is set, but end date is not - complete the range
+      // Must click a different date to complete the range
+      const startDateOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      if (clickedDateOnly.getTime() === startDateOnly.getTime()) {
+        // Clicked the same date as start, do nothing
+        return;
+      }
       if (clickedDateOnly < startDateOnly) {
+        // Clicked date is before start - swap them
+        setEndDate(startDateOnly);
         setStartDate(clickedDateOnly);
+      } else {
+        // Clicked date is after start - set as end
         setEndDate(clickedDateOnly);
-        setSelecting("end");
-      } 
-      // If clicked date is same as start, do nothing (or could set end = start to reset)
-      else if (clickedDateOnly.getTime() === startDateOnly.getTime()) {
-        // Do nothing, or reset to single day
-        setEndDate(clickedDateOnly);
-        setSelecting("end");
       }
-      // If clicked date is after start, set as end
-      else {
-        setEndDate(clickedDateOnly);
-        setSelecting("start");
-      }
+      setSelecting("start");
     }
   };
 
@@ -217,7 +214,7 @@ export default function DateRangePickerModal({
                 Start
               </span>
               <div className="font-bold text-text-main text-lg">
-                {startDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                {startDate ? startDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Select"}
               </div>
               {selecting === "start" && (
                 <div className="absolute top-1/2 -right-1.5 w-3 h-3 bg-white border-l border-b border-primary/20 transform -translate-y-1/2 rotate-45"></div>
@@ -234,7 +231,7 @@ export default function DateRangePickerModal({
                 End
               </span>
               <div className="font-bold text-text-main text-lg">
-                {endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                {endDate ? endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Select"}
               </div>
             </div>
           </div>
