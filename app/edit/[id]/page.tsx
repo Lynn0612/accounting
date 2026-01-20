@@ -1589,7 +1589,7 @@ export default function EditTransactionPage() {
               transition: 'padding-bottom 0.3s ease-in-out'
             }}
           >
-            <div className="mt-4 mb-8 text-center relative z-[101]">
+            <div className="mt-4 mb-8 text-center relative z-[1]">
               <div className="flex items-center justify-center gap-3 mx-auto w-full max-w-[320px]">
                 <span className="text-3xl font-bold text-primary">$</span>
                 <div
@@ -1694,12 +1694,12 @@ export default function EditTransactionPage() {
             </div>
           </main>
 
-          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
+          <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12 z-10">
             {!isViewer ? (
             <div className="flex gap-4">
               <button
                 onClick={() => setShowDeleteModal(true)}
-                className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+                className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors relative z-10"
               >
                 <span className="material-symbols-outlined">delete</span>
                 delete
@@ -1707,7 +1707,7 @@ export default function EditTransactionPage() {
               <button
                 onClick={handleSave}
                 disabled={saving || !canSave()}
-                className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors ${
+                className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors relative z-10 ${
                   saving || !canSave() ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
                 }`}
               >
@@ -1715,16 +1715,16 @@ export default function EditTransactionPage() {
               </button>
             </div>
             ) : (
-              <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium">
+              <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium relative z-10">
                 Viewer mode: only for viewing, cannot be modified
               </div>
             )}
           </div>
 
           {showDeleteModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
               <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => setShowDeleteModal(false)}></div>
-              <div className="relative w-full max-w-[340px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col items-center text-center transform transition-all animate-in fade-in zoom-in duration-200">
+              <div className="relative w-full max-w-[340px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col items-center text-center transform transition-all animate-in fade-in zoom-in duration-200 z-[201]">
                 <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
                   <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
                 </div>
@@ -2202,14 +2202,14 @@ export default function EditTransactionPage() {
                 Split with
               </label>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex -space-x-3 overflow-hidden p-1">
+                <div className="flex -space-x-3 overflow-hidden p-1 relative z-0">
                   {selectedParticipantIds.map((id, index) => {
                     const participant = participants.find((p) => p.id === id)
                     if (!participant) return null
                     return (
                       <div
                         key={id}
-                        className="h-10 w-10 rounded-full ring-2 ring-white bg-primary-light flex items-center justify-center text-white text-xs font-bold overflow-hidden"
+                        className="h-10 w-10 rounded-full ring-2 ring-white bg-primary-light flex items-center justify-center text-white text-xs font-bold overflow-hidden relative"
                         style={{ zIndex: selectedParticipantIds.length - index }}
                       >
                         {participant.avatar ? (
@@ -2221,7 +2221,7 @@ export default function EditTransactionPage() {
                     )
                   })}
                   {selectedParticipantIds.length === 0 && (
-                    <div className="h-10 w-10 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-xs">
+                    <div className="h-10 w-10 rounded-full ring-2 ring-white bg-gray-200 flex items-center justify-center text-xs relative">
                       👤
                     </div>
                   )}
@@ -2493,12 +2493,12 @@ export default function EditTransactionPage() {
         </div>
       </main>
 
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12">
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-background-light via-background-light to-transparent pt-12 z-10">
         {!isViewer ? (
         <div className="flex gap-4">
           <button
             onClick={() => setShowDeleteModal(true)}
-            className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+            className="flex-1 h-14 bg-white text-red-500 font-bold rounded-2xl shadow-soft flex items-center justify-center gap-2 hover:bg-red-50 transition-colors relative z-10"
           >
             <span className="material-symbols-outlined">delete</span>
             delete
@@ -2506,7 +2506,7 @@ export default function EditTransactionPage() {
           <button
             onClick={handleSave}
             disabled={saving || !canSave()}
-            className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 h-14 font-bold rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-colors relative z-10 ${
               saving || !canSave()
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : 'bg-primary text-white hover:bg-primary/90 shadow-primary/30'
@@ -2526,7 +2526,7 @@ export default function EditTransactionPage() {
           </button>
         </div>
         ) : (
-          <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium">
+          <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium relative z-10">
             Viewer 模式：僅供檢視，無法修改
           </div>
         )}
@@ -2534,11 +2534,11 @@ export default function EditTransactionPage() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
           <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]" onClick={() => {
             setShowDeleteModal(false);
           }}></div>
-          <div className="relative w-full max-w-[340px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col items-center text-center transform transition-all animate-in fade-in zoom-in duration-200">
+          <div className="relative w-full max-w-[340px] bg-white rounded-[24px] p-6 shadow-2xl flex flex-col items-center text-center transform transition-all animate-in fade-in zoom-in duration-200 z-[201]">
             <div className="mb-5 flex items-center justify-center size-14 rounded-full bg-red-50 text-red-500">
               <span className="material-symbols-outlined" style={{ fontSize: "28px" }}>delete</span>
             </div>
