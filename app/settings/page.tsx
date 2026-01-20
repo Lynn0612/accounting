@@ -674,24 +674,29 @@ export default function SettingsPage() {
         }
       });
 
-      // Fix 2: Calculate previous period for comparison (equivalent period before the selected range)
-      // Example: If user selects Jan 1-31, calculate Dec 1-31
-      const periodDays = Math.ceil((exportEndDate.getTime() - exportStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      // Fix: Calculate Period 1 and Period 2 dates correctly
+      // Period 1: from exportStartDate to end of exportStartDate's month
+      // Period 2: from exportEndDate to end of exportEndDate's month
+      // Example: If user selects 12/1 - 1/31:
+      //   Period 1: 12/1 to 12/31 (start date's month)
+      //   Period 2: 1/31 to 1/31 (end date's month - from end date to month end)
       
-      // Calculate end date of previous period (day before start date)
-      const prevEndDate = new Date(exportStartDate);
-      prevEndDate.setDate(prevEndDate.getDate() - 1);
+      const period1Start = new Date(exportStartDate);
+      // Set to last day of exportStartDate's month
+      const period1End = new Date(exportStartDate.getFullYear(), exportStartDate.getMonth() + 1, 0);
       
-      // Calculate start date of previous period (same number of days before)
-      const prevStartDate = new Date(prevEndDate);
-      prevStartDate.setDate(prevStartDate.getDate() - periodDays + 1);
+      const period2Start = new Date(exportEndDate);
+      // Set to last day of exportEndDate's month
+      const period2End = new Date(exportEndDate.getFullYear(), exportEndDate.getMonth() + 1, 0);
       
-      const prevStartDateStr = formatLocalDate(prevStartDate);
-      const prevEndDateStr = formatLocalDate(prevEndDate);
+      const period1StartStr = formatLocalDate(period1Start);
+      const period1EndStr = formatLocalDate(period1End);
+      const period2StartStr = formatLocalDate(period2Start);
+      const period2EndStr = formatLocalDate(period2End);
 
-      // Fetch previous period transactions for comparison (Fix 2: Actually fetch data)
+      // Fetch Period 1 transactions for comparison
       // Need to fetch same structure as current period to ensure consistent comparison
-      const { data: prevTransactions } = await supabase
+      const { data: period1Transactions } = await supabase
         .from('transactions')
         .select(`
           id,
@@ -705,14 +710,32 @@ export default function SettingsPage() {
         `)
         .eq(scopeColumn, ledgerId)
         .eq('type', 'expense') // Only expenses for comparison
-        .gte('date', prevStartDateStr)
-        .lte('date', prevEndDateStr);
-
-      // Calculate previous period category totals (same logic as current period)
-      const prevCategoryTotals = new Map<string, number>();
-      const prevPublicCategoryTotals = new Map<string, number>();
+        .gte('date', period1StartStr)
+        .lte('date', period1EndStr);
       
-      (prevTransactions || []).forEach((tx: any) => {
+      // Fetch Period 2 transactions (current selected period) for comparison
+      const { data: period2Transactions } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount,
+          category_id,
+          type,
+          expense_payment_source,
+          is_public_expense,
+          public_amount,
+          categories (id, name, icon)
+        `)
+        .eq(scopeColumn, ledgerId)
+        .eq('type', 'expense')
+        .gte('date', period2StartStr)
+        .lte('date', period2EndStr);
+
+      // Calculate Period 1 category totals (same logic as current period)
+      const period1CategoryTotals = new Map<string, number>();
+      const period1PublicCategoryTotals = new Map<string, number>();
+      
+      (period1Transactions || []).forEach((tx: any) => {
         if (!tx || !tx.category_id) return;
         
         const categoryName = tx.categories?.name || 'Other';
@@ -725,20 +748,44 @@ export default function SettingsPage() {
         }
         
         // Add to category totals
-        const current = prevCategoryTotals.get(categoryName) || 0;
-        prevCategoryTotals.set(categoryName, current + amount);
+        const current = period1CategoryTotals.get(categoryName) || 0;
+        period1CategoryTotals.set(categoryName, current + amount);
         
         // Also track public expense totals
         if (tx.is_public_expense) {
           const publicAmount = Number(tx.public_amount || 0) || amount;
-          const pubCurrent = prevPublicCategoryTotals.get(categoryName) || 0;
-          prevPublicCategoryTotals.set(categoryName, pubCurrent + publicAmount);
+          const pubCurrent = period1PublicCategoryTotals.get(categoryName) || 0;
+          period1PublicCategoryTotals.set(categoryName, pubCurrent + publicAmount);
+        }
+      });
+      
+      // Calculate Period 2 category totals (for comparison, may differ from main data if date ranges differ)
+      const period2CategoryTotals = new Map<string, number>();
+      const period2PublicCategoryTotals = new Map<string, number>();
+      
+      (period2Transactions || []).forEach((tx: any) => {
+        if (!tx || !tx.category_id) return;
+        
+        const categoryName = tx.categories?.name || 'Other';
+        let amount = Number(tx.amount || 0);
+        if (tx.expense_payment_source === 'deposit') {
+          return;
+        }
+        
+        const current = period2CategoryTotals.get(categoryName) || 0;
+        period2CategoryTotals.set(categoryName, current + amount);
+        
+        if (tx.is_public_expense) {
+          const publicAmount = Number(tx.public_amount || 0) || amount;
+          const pubCurrent = period2PublicCategoryTotals.get(categoryName) || 0;
+          period2PublicCategoryTotals.set(categoryName, pubCurrent + publicAmount);
         }
       });
 
       // Prepare summary data
       const totalExpense = expenses.reduce((sum, e) => sum + Number(e['Total Amount'] || 0), 0);
-      const prevTotalExpense = Array.from(prevCategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
+      const period1TotalExpense = Array.from(period1CategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
+      const period2TotalExpense = Array.from(period2CategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
       
       // Format date ranges for Period 1 and Period 2 headers
       const formatDateRange = (start: Date, end: Date): string => {
@@ -749,8 +796,8 @@ export default function SettingsPage() {
         return `${startMonth}/${startDay}-${endMonth}/${endDay}`;
       };
       
-      const period1Range = formatDateRange(prevStartDate, prevEndDate);
-      const period2Range = formatDateRange(exportStartDate, exportEndDate);
+      const period1Range = formatDateRange(period1Start, period1End);
+      const period2Range = formatDateRange(period2Start, period2End);
       
       const summary: any[] = [];
       
@@ -760,21 +807,22 @@ export default function SettingsPage() {
 
       sortedCategories.forEach(([category, data], index) => {
         const percentage = totalExpense > 0 ? ((data.amount / totalExpense) * 100).toFixed(2) : '0.00';
-        const prevAmount = prevCategoryTotals.get(category) || 0;
+        const period1Amount = period1CategoryTotals.get(category) || 0;
+        const period2Amount = period2CategoryTotals.get(category) || 0; // Use period2CategoryTotals for accurate Period 2 data
         
-        // Calculate comparison with both percentage and amount difference
+        // Calculate comparison: Period 2 vs Period 1
         let comparisonText = 'N/A';
-        const diffAmount = data.amount - prevAmount;
+        const diffAmount = period2Amount - period1Amount;
         
-        if (prevAmount > 0) {
+        if (period1Amount > 0) {
           // Both periods have data: calculate percentage change
-          const diffPercentage = ((data.amount - prevAmount) / prevAmount) * 100;
+          const diffPercentage = ((period2Amount - period1Amount) / period1Amount) * 100;
           // Format: -89% (-800.00) or +10% (+100.00)
           comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(0)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
-        } else if (data.amount > 0 && prevAmount === 0) {
+        } else if (period2Amount > 0 && period1Amount === 0) {
           // Period 1 had 0, Period 2 has value: new category
-          comparisonText = `New (+${data.amount.toFixed(2)})`;
-        } else if (data.amount === 0 && prevAmount > 0) {
+          comparisonText = `New (+${period2Amount.toFixed(2)})`;
+        } else if (period2Amount === 0 && period1Amount > 0) {
           // Period 1 had value, Period 2 has 0: category disappeared
           comparisonText = `-100% (${diffAmount.toFixed(2)})`;
         }
@@ -782,8 +830,8 @@ export default function SettingsPage() {
         summary.push({
           'TOP': index + 1,
           Category: category,
-          [`Period 1 (${period1Range})`]: prevAmount,
-          [`Period 2 (${period2Range})`]: data.amount,
+          [`Period 1 (${period1Range})`]: period1Amount,
+          [`Period 2 (${period2Range})`]: period2Amount,
           'Total Amount': data.amount, // Keep for compatibility, shows current period total
           'Percentage (%)': `${percentage}%`,
           'Transaction Count': data.count,
@@ -792,17 +840,17 @@ export default function SettingsPage() {
       });
 
       // Add totals row
-      const totalDiffAmount = totalExpense - prevTotalExpense;
-      const totalDiffPercentage = prevTotalExpense > 0 ? ((totalExpense - prevTotalExpense) / prevTotalExpense) * 100 : (totalExpense > 0 ? 100 : 0);
-      const totalComparisonText = prevTotalExpense > 0 
+      const totalDiffAmount = period2TotalExpense - period1TotalExpense;
+      const totalDiffPercentage = period1TotalExpense > 0 ? ((period2TotalExpense - period1TotalExpense) / period1TotalExpense) * 100 : (period2TotalExpense > 0 ? 100 : 0);
+      const totalComparisonText = period1TotalExpense > 0 
         ? `${totalDiffPercentage >= 0 ? '+' : ''}${totalDiffPercentage.toFixed(0)}% (${totalDiffAmount >= 0 ? '+' : ''}${totalDiffAmount.toFixed(2)})`
         : 'N/A';
       
       summary.push({
         'TOP': '',
         Category: 'TOTAL',
-        [`Period 1 (${period1Range})`]: prevTotalExpense,
-        [`Period 2 (${period2Range})`]: totalExpense,
+        [`Period 1 (${period1Range})`]: period1TotalExpense,
+        [`Period 2 (${period2Range})`]: period2TotalExpense,
         'Total Amount': totalExpense,
         'Percentage (%)': '100.00%',
         'Transaction Count': expenses.length,
@@ -837,24 +885,26 @@ export default function SettingsPage() {
         .sort((a, b) => b[1].amount - a[1].amount);
       
       const totalPublicExpense = sortedPublicCategories.reduce((sum, [, data]) => sum + data.amount, 0);
-      const totalPrevPublicExpense = Array.from(prevPublicCategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
+      const period1TotalPublicExpense = Array.from(period1PublicCategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
+      const period2TotalPublicExpense = Array.from(period2PublicCategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
 
       sortedPublicCategories.forEach(([category, data], index) => {
         const percentage = totalPublicExpense > 0 ? ((data.amount / totalPublicExpense) * 100).toFixed(2) : '0.00';
-        const prevPublicAmount = prevPublicCategoryTotals.get(category) || 0;
+        const period1PublicAmount = period1PublicCategoryTotals.get(category) || 0;
+        const period2PublicAmount = period2PublicCategoryTotals.get(category) || 0;
         
-        // Calculate comparison for public fund categories (same logic)
+        // Calculate comparison for public fund categories (Period 2 vs Period 1)
         let comparisonText = 'N/A';
-        const diffAmount = data.amount - prevPublicAmount;
+        const diffAmount = period2PublicAmount - period1PublicAmount;
         
-        if (prevPublicAmount > 0) {
+        if (period1PublicAmount > 0) {
           // Both periods have data: calculate percentage change
-          const diffPercentage = ((data.amount - prevPublicAmount) / prevPublicAmount) * 100;
+          const diffPercentage = ((period2PublicAmount - period1PublicAmount) / period1PublicAmount) * 100;
           comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(0)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
-        } else if (data.amount > 0 && prevPublicAmount === 0) {
+        } else if (period2PublicAmount > 0 && period1PublicAmount === 0) {
           // Period 1 had 0, Period 2 has value: new category
-          comparisonText = `New (+${data.amount.toFixed(2)})`;
-        } else if (data.amount === 0 && prevPublicAmount > 0) {
+          comparisonText = `New (+${period2PublicAmount.toFixed(2)})`;
+        } else if (period2PublicAmount === 0 && period1PublicAmount > 0) {
           // Period 1 had value, Period 2 has 0: category disappeared
           comparisonText = `-100% (${diffAmount.toFixed(2)})`;
         }
@@ -862,8 +912,8 @@ export default function SettingsPage() {
         summary.push({
           'TOP': index + 1,
           Category: category,
-          [`Period 1 (${period1Range})`]: prevPublicAmount,
-          [`Period 2 (${period2Range})`]: data.amount,
+          [`Period 1 (${period1Range})`]: period1PublicAmount,
+          [`Period 2 (${period2Range})`]: period2PublicAmount,
           'Total Amount': data.amount,
           'Percentage (%)': `${percentage}%`,
           'Transaction Count': data.count,
@@ -873,19 +923,19 @@ export default function SettingsPage() {
 
       // Add public fund total
       if (sortedPublicCategories.length > 0) {
-        const publicTotalDiffAmount = totalPublicExpense - totalPrevPublicExpense;
-        const publicTotalDiffPercentage = totalPrevPublicExpense > 0 
-          ? ((totalPublicExpense - totalPrevPublicExpense) / totalPrevPublicExpense) * 100 
-          : (totalPublicExpense > 0 ? 100 : 0);
-        const publicTotalComparisonText = totalPrevPublicExpense > 0 
+        const publicTotalDiffAmount = period2TotalPublicExpense - period1TotalPublicExpense;
+        const publicTotalDiffPercentage = period1TotalPublicExpense > 0 
+          ? ((period2TotalPublicExpense - period1TotalPublicExpense) / period1TotalPublicExpense) * 100 
+          : (period2TotalPublicExpense > 0 ? 100 : 0);
+        const publicTotalComparisonText = period1TotalPublicExpense > 0 
           ? `${publicTotalDiffPercentage >= 0 ? '+' : ''}${publicTotalDiffPercentage.toFixed(0)}% (${publicTotalDiffAmount >= 0 ? '+' : ''}${publicTotalDiffAmount.toFixed(2)})`
           : 'N/A';
         
         summary.push({
           'TOP': '',
           Category: 'PUBLIC FUND TOTAL',
-          [`Period 1 (${period1Range})`]: totalPrevPublicExpense,
-          [`Period 2 (${period2Range})`]: totalPublicExpense,
+          [`Period 1 (${period1Range})`]: period1TotalPublicExpense,
+          [`Period 2 (${period2Range})`]: period2TotalPublicExpense,
           'Total Amount': totalPublicExpense,
           'Percentage (%)': '100.00%',
           'Transaction Count': sortedPublicCategories.reduce((sum, [, data]) => sum + data.count, 0),
