@@ -676,18 +676,21 @@ export default function SettingsPage() {
 
       // Fix: Calculate Period 1 and Period 2 dates correctly
       // Period 1: from exportStartDate to end of exportStartDate's month
-      // Period 2: from exportEndDate to end of exportEndDate's month
+      // Period 2: from first day of exportEndDate's month to exportEndDate
       // Example: If user selects 12/1 - 1/31:
-      //   Period 1: 12/1 to 12/31 (start date's month)
-      //   Period 2: 1/31 to 1/31 (end date's month - from end date to month end)
+      //   Period 1: 12/1 to 12/31 (start date to start date's month end)
+      //   Period 2: 1/1 to 1/31 (end date's month first day to end date)
+      // Example: If user selects 12/5 - 1/28:
+      //   Period 1: 12/5 to 12/31
+      //   Period 2: 1/1 to 1/28
       
       const period1Start = new Date(exportStartDate);
       // Set to last day of exportStartDate's month
       const period1End = new Date(exportStartDate.getFullYear(), exportStartDate.getMonth() + 1, 0);
       
-      const period2Start = new Date(exportEndDate);
-      // Set to last day of exportEndDate's month
-      const period2End = new Date(exportEndDate.getFullYear(), exportEndDate.getMonth() + 1, 0);
+      // Period 2: from first day of exportEndDate's month to exportEndDate
+      const period2Start = new Date(exportEndDate.getFullYear(), exportEndDate.getMonth(), 1); // First day of end date's month
+      const period2End = new Date(exportEndDate);
       
       const period1StartStr = formatLocalDate(period1Start);
       const period1EndStr = formatLocalDate(period1End);
