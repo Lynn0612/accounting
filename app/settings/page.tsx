@@ -738,6 +738,20 @@ export default function SettingsPage() {
 
       // Prepare summary data
       const totalExpense = expenses.reduce((sum, e) => sum + Number(e['Total Amount'] || 0), 0);
+      const prevTotalExpense = Array.from(prevCategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
+      
+      // Format date ranges for Period 1 and Period 2 headers
+      const formatDateRange = (start: Date, end: Date): string => {
+        const startMonth = start.getMonth() + 1;
+        const startDay = start.getDate();
+        const endMonth = end.getMonth() + 1;
+        const endDay = end.getDate();
+        return `${startMonth}/${startDay}-${endMonth}/${endDay}`;
+      };
+      
+      const period1Range = formatDateRange(prevStartDate, prevEndDate);
+      const period2Range = formatDateRange(exportStartDate, exportEndDate);
+      
       const summary: any[] = [];
       
       // Add category breakdown with ranking
@@ -748,28 +762,29 @@ export default function SettingsPage() {
         const percentage = totalExpense > 0 ? ((data.amount / totalExpense) * 100).toFixed(2) : '0.00';
         const prevAmount = prevCategoryTotals.get(category) || 0;
         
-        // Fix 3: Calculate comparison with both percentage and amount difference
-        // Match the logic from Statistics Compare page
+        // Calculate comparison with both percentage and amount difference
         let comparisonText = 'N/A';
         const diffAmount = data.amount - prevAmount;
         
         if (prevAmount > 0) {
           // Both periods have data: calculate percentage change
           const diffPercentage = ((data.amount - prevAmount) / prevAmount) * 100;
-          comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(2)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
+          // Format: -89% (-800.00) or +10% (+100.00)
+          comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(0)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
         } else if (data.amount > 0 && prevAmount === 0) {
           // Period 1 had 0, Period 2 has value: new category
           comparisonText = `New (+${data.amount.toFixed(2)})`;
         } else if (data.amount === 0 && prevAmount > 0) {
           // Period 1 had value, Period 2 has 0: category disappeared
-          const diffPercentage = -100;
-          comparisonText = `${diffPercentage.toFixed(2)}% (${diffAmount.toFixed(2)})`;
+          comparisonText = `-100% (${diffAmount.toFixed(2)})`;
         }
         
         summary.push({
-          'TOP': index + 1, // Fix 3: Show ranking in TOP column (column A)
+          'TOP': index + 1,
           Category: category,
-          'Total Amount': data.amount,
+          [`Period 1 (${period1Range})`]: prevAmount,
+          [`Period 2 (${period2Range})`]: data.amount,
+          'Total Amount': data.amount, // Keep for compatibility, shows current period total
           'Percentage (%)': `${percentage}%`,
           'Transaction Count': data.count,
           'Comparison (%)': comparisonText
@@ -777,19 +792,29 @@ export default function SettingsPage() {
       });
 
       // Add totals row
+      const totalDiffAmount = totalExpense - prevTotalExpense;
+      const totalDiffPercentage = prevTotalExpense > 0 ? ((totalExpense - prevTotalExpense) / prevTotalExpense) * 100 : (totalExpense > 0 ? 100 : 0);
+      const totalComparisonText = prevTotalExpense > 0 
+        ? `${totalDiffPercentage >= 0 ? '+' : ''}${totalDiffPercentage.toFixed(0)}% (${totalDiffAmount >= 0 ? '+' : ''}${totalDiffAmount.toFixed(2)})`
+        : 'N/A';
+      
       summary.push({
         'TOP': '',
         Category: 'TOTAL',
+        [`Period 1 (${period1Range})`]: prevTotalExpense,
+        [`Period 2 (${period2Range})`]: totalExpense,
         'Total Amount': totalExpense,
         'Percentage (%)': '100.00%',
         'Transaction Count': expenses.length,
-        'Comparison (%)': 'N/A'
+        'Comparison (%)': totalComparisonText
       });
 
       // Add empty row
       summary.push({
         'TOP': '',
         Category: '',
+        [`Period 1 (${period1Range})`]: '',
+        [`Period 2 (${period2Range})`]: '',
         'Total Amount': '',
         'Percentage (%)': '',
         'Transaction Count': '',
@@ -800,6 +825,8 @@ export default function SettingsPage() {
       summary.push({
         'TOP': '',
         Category: '=== PUBLIC FUND CATEGORY RANKING ===',
+        [`Period 1 (${period1Range})`]: '',
+        [`Period 2 (${period2Range})`]: '',
         'Total Amount': '',
         'Percentage (%)': '',
         'Transaction Count': '',
@@ -810,6 +837,7 @@ export default function SettingsPage() {
         .sort((a, b) => b[1].amount - a[1].amount);
       
       const totalPublicExpense = sortedPublicCategories.reduce((sum, [, data]) => sum + data.amount, 0);
+      const totalPrevPublicExpense = Array.from(prevPublicCategoryTotals.values()).reduce((sum, amt) => sum + amt, 0);
 
       sortedPublicCategories.forEach(([category, data], index) => {
         const percentage = totalPublicExpense > 0 ? ((data.amount / totalPublicExpense) * 100).toFixed(2) : '0.00';
@@ -822,19 +850,20 @@ export default function SettingsPage() {
         if (prevPublicAmount > 0) {
           // Both periods have data: calculate percentage change
           const diffPercentage = ((data.amount - prevPublicAmount) / prevPublicAmount) * 100;
-          comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(2)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
+          comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(0)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
         } else if (data.amount > 0 && prevPublicAmount === 0) {
           // Period 1 had 0, Period 2 has value: new category
           comparisonText = `New (+${data.amount.toFixed(2)})`;
         } else if (data.amount === 0 && prevPublicAmount > 0) {
           // Period 1 had value, Period 2 has 0: category disappeared
-          const diffPercentage = -100;
-          comparisonText = `${diffPercentage.toFixed(2)}% (${diffAmount.toFixed(2)})`;
+          comparisonText = `-100% (${diffAmount.toFixed(2)})`;
         }
         
         summary.push({
           'TOP': index + 1,
           Category: category,
+          [`Period 1 (${period1Range})`]: prevPublicAmount,
+          [`Period 2 (${period2Range})`]: data.amount,
           'Total Amount': data.amount,
           'Percentage (%)': `${percentage}%`,
           'Transaction Count': data.count,
@@ -844,13 +873,23 @@ export default function SettingsPage() {
 
       // Add public fund total
       if (sortedPublicCategories.length > 0) {
+        const publicTotalDiffAmount = totalPublicExpense - totalPrevPublicExpense;
+        const publicTotalDiffPercentage = totalPrevPublicExpense > 0 
+          ? ((totalPublicExpense - totalPrevPublicExpense) / totalPrevPublicExpense) * 100 
+          : (totalPublicExpense > 0 ? 100 : 0);
+        const publicTotalComparisonText = totalPrevPublicExpense > 0 
+          ? `${publicTotalDiffPercentage >= 0 ? '+' : ''}${publicTotalDiffPercentage.toFixed(0)}% (${publicTotalDiffAmount >= 0 ? '+' : ''}${publicTotalDiffAmount.toFixed(2)})`
+          : 'N/A';
+        
         summary.push({
           'TOP': '',
           Category: 'PUBLIC FUND TOTAL',
+          [`Period 1 (${period1Range})`]: totalPrevPublicExpense,
+          [`Period 2 (${period2Range})`]: totalPublicExpense,
           'Total Amount': totalPublicExpense,
           'Percentage (%)': '100.00%',
           'Transaction Count': sortedPublicCategories.reduce((sum, [, data]) => sum + data.count, 0),
-          'Comparison (%)': 'N/A'
+          'Comparison (%)': publicTotalComparisonText
         });
       }
 
@@ -858,6 +897,8 @@ export default function SettingsPage() {
       summary.push({
         'TOP': '',
         Category: '',
+        [`Period 1 (${period1Range})`]: '',
+        [`Period 2 (${period2Range})`]: '',
         'Total Amount': '',
         'Percentage (%)': '',
         'Transaction Count': '',
@@ -868,6 +909,8 @@ export default function SettingsPage() {
       summary.push({
         'TOP': '',
         Category: '=== FINAL SETTLEMENT (待結算) ===',
+        [`Period 1 (${period1Range})`]: '',
+        [`Period 2 (${period2Range})`]: '',
         'Total Amount': '',
         'Percentage (%)': '',
         'Transaction Count': '',
@@ -878,6 +921,8 @@ export default function SettingsPage() {
       summary.push({
         'TOP': '',
         Category: 'Member Name',
+        [`Period 1 (${period1Range})`]: '',
+        [`Period 2 (${period2Range})`]: '',
         'Total Amount': 'Total Advanced (墊付總額)',
         'Percentage (%)': 'Total Share (應付總額)',
         'Transaction Count': 'Repaid/Received (已還款/收款)',
@@ -899,6 +944,8 @@ export default function SettingsPage() {
         summary.push({
           'TOP': '',
           Category: name,
+          [`Period 1 (${period1Range})`]: '',
+          [`Period 2 (${period2Range})`]: '',
           'Total Amount': advanced,
           'Percentage (%)': share,
           'Transaction Count': `Repaid: ${repaid.toFixed(2)}, Received: ${received.toFixed(2)}`,
@@ -1026,12 +1073,14 @@ export default function SettingsPage() {
       // Sheet 3: Summary
       const wsSummary = XLSX.utils.json_to_sheet(summary);
       wsSummary['!cols'] = [
-        { wch: 8 },  // TOP
-        { wch: 30 }, // Category (wider for section headers)
-        { wch: 18 }, // Total Amount
-        { wch: 18 }, // Percentage / Total Advanced
-        { wch: 25 }, // Transaction Count / Total Share / Repaid/Received
-        { wch: 35 }  // Comparison / Outstanding Balance
+        { wch: 8 },  // TOP (rank column)
+        { wch: 25 }, // Category
+        { wch: 20 }, // Period 1 (date range)
+        { wch: 20 }, // Period 2 (date range)
+        { wch: 15 }, // Total Amount
+        { wch: 15 }, // Percentage (%)
+        { wch: 15 }, // Transaction Count
+        { wch: 25 }  // Comparison (%)
       ];
       
       // Make header row bold
