@@ -51,6 +51,7 @@ function ComparePageContent() {
   }
   
   const [statType, setStatType] = useState<'expense' | 'income'>(getInitialStatType())
+  const [showSharedExpenseOnly, setShowSharedExpenseOnly] = useState(false) // 公費統計模式
   const [showDatePicker, setShowDatePicker] = useState<'period1' | 'period2' | null>(null)
   
   const [period1Start, setPeriod1Start] = useState<Date>(() => {
@@ -85,11 +86,14 @@ function ComparePageContent() {
     if (type && (type === 'expense' || type === 'income')) {
       setStatType(type)
     }
+    // Check if public expense comparison mode
+    const isPublic = searchParams.get('public') === 'true'
+    setShowSharedExpenseOnly(isPublic)
   }, [searchParams])
 
   useEffect(() => {
     loadData()
-  }, [statType, activeLedger, period1Start, period1End, period2Start, period2End])
+  }, [statType, activeLedger, period1Start, period1End, period2Start, period2End, showSharedExpenseOnly])
 
   const loadData = async () => {
     setLoading(true)
@@ -129,47 +133,60 @@ function ComparePageContent() {
       const period2EndStr = formatDateStr(period2End)
 
       // Fetch transactions directly (not splits) for both periods
+      // If showSharedExpenseOnly is true, only fetch public expenses
+      let queryA = supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount,
+            category_id,
+            type,
+            is_public_expense,
+            public_amount,
+          date,
+          categories (
+            id,
+            name,
+            icon,
+            type
+          )
+        `)
+        .eq(transactionIdColumn, ledgerId)
+        .eq('type', statType === 'expense' ? 'expense' : 'income')
+        .gte('date', period1StartStr)
+        .lte('date', period1EndStr)
+      
+      let queryB = supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount,
+            category_id,
+            type,
+            is_public_expense,
+            public_amount,
+          date,
+          categories (
+            id,
+            name,
+            icon,
+            type
+          )
+        `)
+        .eq(transactionIdColumn, ledgerId)
+        .eq('type', statType === 'expense' ? 'expense' : 'income')
+        .gte('date', period2StartStr)
+        .lte('date', period2EndStr)
+      
+      // Filter for public expenses if in public expense comparison mode
+      if (showSharedExpenseOnly && statType === 'expense') {
+        queryA = queryA.eq('is_public_expense', true)
+        queryB = queryB.eq('is_public_expense', true)
+      }
+      
       const [transactionsA, transactionsB, categoriesData] = await Promise.all([
-        supabase
-          .from('transactions')
-          .select(`
-            id,
-            amount,
-              category_id,
-              type,
-            date,
-            categories (
-              id,
-              name,
-              icon,
-              type
-            )
-          `)
-          .eq(transactionIdColumn, ledgerId)
-          .eq('type', statType === 'expense' ? 'expense' : 'income')
-          .gte('date', period1StartStr)
-          .lte('date', period1EndStr)
-          .order('date', { ascending: false }),
-        supabase
-          .from('transactions')
-          .select(`
-            id,
-            amount,
-              category_id,
-              type,
-            date,
-            categories (
-              id,
-              name,
-              icon,
-              type
-            )
-          `)
-          .eq(transactionIdColumn, ledgerId)
-          .eq('type', statType === 'expense' ? 'expense' : 'income')
-          .gte('date', period2StartStr)
-          .lte('date', period2EndStr)
-          .order('date', { ascending: false }),
+        queryA.order('date', { ascending: false }),
+        queryB.order('date', { ascending: false }),
         supabase
           .from('categories')
           .select('id, name, icon, type')
@@ -191,7 +208,12 @@ function ComparePageContent() {
         transactions.forEach((tx: any) => {
           if (!tx || !tx.category_id) return
           
-          const amount = parseFloat(tx.amount) || 0
+          // For public expense comparison, use public_amount if available, otherwise use amount
+          let amount = parseFloat(tx.amount) || 0
+          if (showSharedExpenseOnly && statType === 'expense' && tx.is_public_expense) {
+            amount = parseFloat(tx.public_amount) || parseFloat(tx.amount) || 0
+          }
+          
           total += amount
           
           const current = categoryTotals.get(tx.category_id) || 0
@@ -395,7 +417,14 @@ function ComparePageContent() {
           >
             <span className="material-symbols-outlined" style={{ fontSize: "22px" }}>arrow_back</span>
           </button>
-          <h1 className="text-xl font-bold text-text-main tracking-tight">{statType === 'expense' ? 'Compare Spending' : 'Compare Income'}</h1>
+          <h1 className="text-xl font-bold text-text-main tracking-tight">
+            {showSharedExpenseOnly && statType === 'expense' 
+              ? 'Compare Public Expense (公費比較)' 
+              : statType === 'expense' 
+                ? 'Compare Spending' 
+                : 'Compare Income'
+            }
+          </h1>
           <div className="w-10 h-10"></div>
         </div>
         <div className="flex flex-col gap-6 mt-2">

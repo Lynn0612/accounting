@@ -690,19 +690,49 @@ export default function SettingsPage() {
       const prevEndDateStr = formatLocalDate(prevEndDate);
 
       // Fetch previous period transactions for comparison (Fix 2: Actually fetch data)
+      // Need to fetch same structure as current period to ensure consistent comparison
       const { data: prevTransactions } = await supabase
         .from('transactions')
-        .select('amount, category_id, type, categories (name)')
+        .select(`
+          id,
+          amount,
+          category_id,
+          type,
+          expense_payment_source,
+          is_public_expense,
+          public_amount,
+          categories (id, name, icon)
+        `)
         .eq(scopeColumn, ledgerId)
+        .eq('type', 'expense') // Only expenses for comparison
         .gte('date', prevStartDateStr)
         .lte('date', prevEndDateStr);
 
+      // Calculate previous period category totals (same logic as current period)
       const prevCategoryTotals = new Map<string, number>();
+      const prevPublicCategoryTotals = new Map<string, number>();
+      
       (prevTransactions || []).forEach((tx: any) => {
-        if (tx.type === 'expense') { // Only count expenses for comparison
-          const categoryName = tx.categories?.name || 'Other';
-          const amount = Number(tx.amount || 0);
-          prevCategoryTotals.set(categoryName, (prevCategoryTotals.get(categoryName) || 0) + amount);
+        if (!tx || !tx.category_id) return;
+        
+        const categoryName = tx.categories?.name || 'Other';
+        // Use same amount calculation logic as current period
+        // For non-deposit expenses, use amount; for deposits, should not be included in expenses
+        let amount = Number(tx.amount || 0);
+        if (tx.expense_payment_source === 'deposit') {
+          // Skip deposit-funded expenses for comparison (same as current period logic)
+          return;
+        }
+        
+        // Add to category totals
+        const current = prevCategoryTotals.get(categoryName) || 0;
+        prevCategoryTotals.set(categoryName, current + amount);
+        
+        // Also track public expense totals
+        if (tx.is_public_expense) {
+          const publicAmount = Number(tx.public_amount || 0) || amount;
+          const pubCurrent = prevPublicCategoryTotals.get(categoryName) || 0;
+          prevPublicCategoryTotals.set(categoryName, pubCurrent + publicAmount);
         }
       });
 
@@ -719,14 +749,21 @@ export default function SettingsPage() {
         const prevAmount = prevCategoryTotals.get(category) || 0;
         
         // Fix 3: Calculate comparison with both percentage and amount difference
+        // Match the logic from Statistics Compare page
         let comparisonText = 'N/A';
+        const diffAmount = data.amount - prevAmount;
+        
         if (prevAmount > 0) {
+          // Both periods have data: calculate percentage change
           const diffPercentage = ((data.amount - prevAmount) / prevAmount) * 100;
-          const diffAmount = data.amount - prevAmount;
           comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(2)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
         } else if (data.amount > 0 && prevAmount === 0) {
-          // New category
+          // Period 1 had 0, Period 2 has value: new category
           comparisonText = `New (+${data.amount.toFixed(2)})`;
+        } else if (data.amount === 0 && prevAmount > 0) {
+          // Period 1 had value, Period 2 has 0: category disappeared
+          const diffPercentage = -100;
+          comparisonText = `${diffPercentage.toFixed(2)}% (${diffAmount.toFixed(2)})`;
         }
         
         summary.push({
@@ -776,13 +813,32 @@ export default function SettingsPage() {
 
       sortedPublicCategories.forEach(([category, data], index) => {
         const percentage = totalPublicExpense > 0 ? ((data.amount / totalPublicExpense) * 100).toFixed(2) : '0.00';
+        const prevPublicAmount = prevPublicCategoryTotals.get(category) || 0;
+        
+        // Calculate comparison for public fund categories (same logic)
+        let comparisonText = 'N/A';
+        const diffAmount = data.amount - prevPublicAmount;
+        
+        if (prevPublicAmount > 0) {
+          // Both periods have data: calculate percentage change
+          const diffPercentage = ((data.amount - prevPublicAmount) / prevPublicAmount) * 100;
+          comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(2)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
+        } else if (data.amount > 0 && prevPublicAmount === 0) {
+          // Period 1 had 0, Period 2 has value: new category
+          comparisonText = `New (+${data.amount.toFixed(2)})`;
+        } else if (data.amount === 0 && prevPublicAmount > 0) {
+          // Period 1 had value, Period 2 has 0: category disappeared
+          const diffPercentage = -100;
+          comparisonText = `${diffPercentage.toFixed(2)}% (${diffAmount.toFixed(2)})`;
+        }
+        
         summary.push({
           'TOP': index + 1,
           Category: category,
           'Total Amount': data.amount,
           'Percentage (%)': `${percentage}%`,
           'Transaction Count': data.count,
-          'Comparison (%)': 'N/A'
+          'Comparison (%)': comparisonText
         });
       });
 

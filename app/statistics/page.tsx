@@ -469,7 +469,7 @@ export default function StatisticsPage() {
           </button>
         </div>
         <Link
-          href={`/statistics/compare?type=${statType}`}
+          href={`/statistics/compare?type=${statType}${showSharedExpenseOnly && statType === 'expense' ? '&public=true' : ''}`}
           className="bg-white px-4 py-2.5 rounded-full shadow-sm text-sm font-semibold text-text-main flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all border border-accent-grey/50"
         >
           <span>Compare</span>
@@ -676,7 +676,7 @@ export default function StatisticsPage() {
                 <span className="material-symbols-outlined text-text-secondary" style={{ fontSize: "18px" }}>calendar_month</span>
               </button>
               <Link
-                href={`/statistics/compare?type=${statType}`}
+                href={`/statistics/compare?type=${statType}${showSharedExpenseOnly && statType === 'expense' ? '&public=true' : ''}`}
                 className="bg-white px-4 py-2.5 rounded-full shadow-sm text-sm font-semibold text-text-main flex items-center gap-2 hover:bg-gray-50 active:scale-95 transition-all border border-accent-grey/50"
               >
                 <span>Compare</span>
