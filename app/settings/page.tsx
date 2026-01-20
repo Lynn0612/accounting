@@ -628,6 +628,7 @@ export default function SettingsPage() {
           const incomeRow: any = {
             Date: date,
             'Member Name': payerName,
+            Category: categoryName, // Fix: Add category name for income records
             Note: tx.description || '',
             'Income Amount': 0,
             'Top-up Amount': 0,

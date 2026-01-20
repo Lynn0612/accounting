@@ -26,6 +26,7 @@ interface CategoryComparison {
   difference: number
   percentage: number
   color: string
+  isNew?: boolean
 }
 
 function ComparePageContent() {
@@ -210,54 +211,62 @@ function ComparePageContent() {
         ...Array.from(periodB.categoryTotals.keys())
       ])
 
-      const categoriesAList: CategoryData[] = Array.from(allCategoryIds)
-        .map((categoryId) => {
-          const categoryInfo = categoryMap.get(categoryId) || { name: 'Unknown', icon: '💰' }
-          const amount = periodA.categoryTotals.get(categoryId) || 0
-          return {
-            id: categoryId,
-            name: categoryInfo.name,
-            icon: categoryInfo.icon,
-            amount
-          }
-        })
-        .filter(cat => cat.amount > 0)
-        .sort((a, b) => b.amount - a.amount)
+      // Fix: Normalize category names for matching (case-insensitive, trim spaces)
+      const normalizeName = (name: string) => name.trim().toLowerCase()
 
-      const categoriesBList: CategoryData[] = Array.from(allCategoryIds)
-        .map((categoryId) => {
-          const categoryInfo = categoryMap.get(categoryId) || { name: 'Unknown', icon: '💰' }
-          const amount = periodB.categoryTotals.get(categoryId) || 0
-          return {
-            id: categoryId,
-            name: categoryInfo.name,
-            icon: categoryInfo.icon,
-            amount
-          }
-        })
-        .filter(cat => cat.amount > 0)
-        .sort((a, b) => b.amount - a.amount)
+      // Create a map of normalized names to category IDs to handle name variations
+      const nameToIdsMap = new Map<string, string[]>()
+      categoryMap.forEach((info, categoryId) => {
+        const normalized = normalizeName(info.name)
+        if (!nameToIdsMap.has(normalized)) {
+          nameToIdsMap.set(normalized, [])
+        }
+        nameToIdsMap.get(normalized)!.push(categoryId)
+      })
 
-      const comparisonsList: CategoryComparison[] = Array.from(allCategoryIds)
+      // Build a unified category list using Full Outer Join logic
+      // Collect all unique category IDs from both periods
+      const allUniqueCategoryIds = new Set<string>()
+      
+      // Add all category IDs from Period A
+      periodA.categoryTotals.forEach((_, categoryId) => {
+        allUniqueCategoryIds.add(categoryId)
+      })
+      
+      // Add all category IDs from Period B
+      periodB.categoryTotals.forEach((_, categoryId) => {
+        allUniqueCategoryIds.add(categoryId)
+      })
+
+      // Also include all categories from categoryMap to ensure we don't miss any
+      categoryMap.forEach((_, categoryId) => {
+        allUniqueCategoryIds.add(categoryId)
+      })
+
+      // Build comparisons with Full Outer Join logic
+      const comparisonsList: CategoryComparison[] = Array.from(allUniqueCategoryIds)
         .map((categoryId, index) => {
           const categoryInfo = categoryMap.get(categoryId) || { name: 'Unknown', icon: '💰' }
           const amountA = periodA.categoryTotals.get(categoryId) || 0
           const amountB = periodB.categoryTotals.get(categoryId) || 0
           const difference = amountB - amountA
           
-          // Calculate percentage with proper bounds
+          // Calculate percentage with proper logic
           let percentage = 0
-          if (amountA > 0) {
-            // Normal case: calculate percentage change from Period 1
+          let isNew = false
+          
+          if (amountA > 0 && amountB > 0) {
+            // Both periods have transactions: calculate percentage change
             percentage = (difference / amountA) * 100
-            // Cap percentage at ±100% for reasonable display
-            percentage = Math.max(-100, Math.min(100, percentage))
-          } else if (amountB > 0) {
+          } else if (amountA > 0 && amountB === 0) {
+            // Period 1 had transactions, Period 2 has none: -100% change
+            percentage = -100
+          } else if (amountA === 0 && amountB > 0) {
             // Period 1 had 0, Period 2 has value: this is a new category
-            // Show as 100% increase (from 0 to amountB)
             percentage = 100
+            isNew = true
           } else {
-            // Both periods have 0: no change
+            // Both periods have 0: no change (shouldn't normally appear, but included for completeness)
             percentage = 0
           }
           
@@ -269,10 +278,35 @@ function ComparePageContent() {
             amountB,
             difference,
             percentage: Math.round(percentage * 100) / 100,
-            color: colors[index % colors.length]
-          }
+            color: colors[index % colors.length],
+            isNew
+          } as CategoryComparison & { isNew?: boolean }
         })
-        .filter(comp => comp.amountA > 0 || comp.amountB > 0)
+        .filter(comp => comp.amountA > 0 || comp.amountB > 0) // Only show categories that have transactions in at least one period
+        .sort((a, b) => {
+          // Sort by total amount (both periods combined) descending, then by name
+          const totalA = a.amountA + a.amountB
+          const totalB = b.amountA + b.amountB
+          if (totalB !== totalA) {
+            return totalB - totalA
+          }
+          return a.name.localeCompare(b.name)
+        })
+
+      // Build category lists for display (all categories, not filtered)
+      const categoriesAList: CategoryData[] = comparisonsList.map(comp => ({
+        id: comp.id,
+        name: comp.name,
+        icon: comp.icon,
+        amount: comp.amountA
+      }))
+
+      const categoriesBList: CategoryData[] = comparisonsList.map(comp => ({
+        id: comp.id,
+        name: comp.name,
+        icon: comp.icon,
+        amount: comp.amountB
+      }))
 
       setCategoriesA(categoriesAList)
       setCategoriesB(categoriesBList)
@@ -491,6 +525,87 @@ function ComparePageContent() {
                   </div>
                 )
               })}
+            </div>
+          </div>
+
+          {/* Full Category Comparison Table - Show ALL categories */}
+          <div className="mt-4">
+            <h3 className="text-sm font-bold text-text-main px-2 mb-3">
+              All Categories Comparison
+            </h3>
+            <div className="bg-white rounded-[24px] shadow-card overflow-hidden">
+              <div className="divide-y divide-gray-100">
+                {comparisons.map((change) => {
+                  // For expense: decreases (savings) = green, increases = red
+                  // For income: increases = red, decreases = green
+                  const isDecrease = change.difference < 0
+                  const isIncrease = change.difference > 0
+                  
+                  let period1Color = 'text-text-main'
+                  let period2Color = 'text-text-main'
+                  let diffColor = 'text-text-secondary'
+                  
+                  if (statType === 'expense') {
+                    // Expense: decreases are good (green), increases are bad (red)
+                    period2Color = isDecrease ? 'text-trend-down' : isIncrease ? 'text-trend-up' : 'text-text-main'
+                    diffColor = isDecrease ? 'text-trend-down' : isIncrease ? 'text-trend-up' : 'text-text-secondary'
+                  } else {
+                    // Income: increases are good (red/up), decreases are bad (green/down)
+                    period2Color = isIncrease ? 'text-trend-up' : isDecrease ? 'text-trend-down' : 'text-text-main'
+                    diffColor = isIncrease ? 'text-trend-up' : isDecrease ? 'text-trend-down' : 'text-text-secondary'
+                  }
+                  
+                  return (
+                    <div key={change.id} className="p-4 hover:bg-gray-50 transition-colors">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <div className={`w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center shrink-0`}>
+                            {change.icon && !change.icon.startsWith('material-symbols') ? (
+                              <span className="text-lg">{change.icon}</span>
+                            ) : (
+                              <span className="material-symbols-outlined text-gray-600" style={{ fontSize: "18px" }}>{change.icon || '💰'}</span>
+                            )}
+                          </div>
+                          <div className="flex flex-col min-w-0 flex-1">
+                            <span className="font-semibold text-text-main text-sm truncate">{change.name}</span>
+                            <span className="text-xs text-text-secondary">
+                              {change.isNew ? 'New in Period 2' : `${formatAmountSimple(change.amountA)} → ${formatAmountSimple(change.amountB)}`}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0">
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xs font-medium ${period1Color}`}>
+                              {formatAmountSimple(change.amountA)}
+                            </span>
+                            <span className="text-xs text-text-secondary">Period 1</span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className={`text-xs font-medium ${period2Color}`}>
+                              {formatAmountSimple(change.amountB)}
+                            </span>
+                            <span className="text-xs text-text-secondary">Period 2</span>
+                          </div>
+                          <div className="flex flex-col items-end min-w-[80px]">
+                            <span className={`text-sm font-bold ${diffColor}`}>
+                              {change.isNew ? (
+                                <span className="text-xs bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">New</span>
+                              ) : (
+                                <>
+                                  {change.difference >= 0 ? '+' : ''}{formatAmountSimple(change.difference)}
+                                </>
+                              )}
+                            </span>
+                            <span className={`text-xs font-medium ${diffColor}`}>
+                              {change.isNew ? '' : (change.percentage >= 0 ? '+' : '') + change.percentage.toFixed(0) + '%'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </div>
 
