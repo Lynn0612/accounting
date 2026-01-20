@@ -534,10 +534,22 @@ export default function SettingsPage() {
         console.error('Error fetching settlements:', settlementsError);
       }
 
+      // Get all unique member names and IDs for dynamic columns
+      const memberNames = Array.from(participantMap.values()).filter(name => name !== 'Unknown');
+      const memberIds = Array.from(participantMap.entries())
+        .filter(([_, name]) => name !== 'Unknown')
+        .map(([id, name]) => ({ id, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)); // Sort by name for consistent column order
+
       // Prepare data for Excel
       const expenses: any[] = [];
       const incomes: any[] = [];
-      const categoryTotals = new Map<string, { amount: number; count: number }>();
+      const categoryTotals = new Map<string, { amount: number; count: number; publicAmount: number }>();
+      const publicCategoryTotals = new Map<string, { amount: number; count: number }>();
+      
+      // Track member balances for final settlement
+      const memberPaid = new Map<string, number>(); // Total paid by member (as payer)
+      const memberSplit = new Map<string, number>(); // Total split amount assigned to member
 
       (transactions || []).forEach((tx: any) => {
         const date = new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -545,60 +557,122 @@ export default function SettingsPage() {
         const categoryName = tx.categories?.name || 'Other';
         const amount = Number(tx.amount || 0);
         const splits = splitsByTx.get(tx.id) || [];
-        const splitDetails = splits.map(s => `${participantMap.get(s.user_id) || 'Unknown'}: $${s.amount.toFixed(2)}`).join('; ');
         const publicAmount = tx.is_public_expense ? (Number(tx.public_amount || 0) || amount) : 0;
 
         // Update category totals
         if (!categoryTotals.has(categoryName)) {
-          categoryTotals.set(categoryName, { amount: 0, count: 0 });
+          categoryTotals.set(categoryName, { amount: 0, count: 0, publicAmount: 0 });
         }
         const catTotal = categoryTotals.get(categoryName)!;
         catTotal.amount += amount;
         catTotal.count += 1;
+        if (tx.is_public_expense) {
+          catTotal.publicAmount += publicAmount;
+        }
+
+        // Update public category totals
+        if (tx.is_public_expense) {
+          if (!publicCategoryTotals.has(categoryName)) {
+            publicCategoryTotals.set(categoryName, { amount: 0, count: 0 });
+          }
+          const pubCatTotal = publicCategoryTotals.get(categoryName)!;
+          pubCatTotal.amount += publicAmount;
+          pubCatTotal.count += 1;
+        }
 
         if (tx.type === 'expense') {
-          expenses.push({
+          // Track member paid amounts (only for non-deposit expenses)
+          if (tx.expense_payment_source !== 'deposit') {
+            const payerId = tx.payer_id;
+            if (payerId && participantMap.has(payerId)) {
+              memberPaid.set(payerId, (memberPaid.get(payerId) || 0) + amount);
+            }
+          }
+
+          // Build expense row with dynamic member columns
+          const expenseRow: any = {
             Date: date,
             Payer: payerName,
             Category: categoryName,
             Note: tx.description || '',
-            Amount: amount,
-            'Split Details': splitDetails,
+            'Total Amount': amount,
             'Public Fund Amount': tx.is_public_expense ? publicAmount : 0
+          };
+
+          // Add split amount column for each member
+          memberIds.forEach(({ id, name }) => {
+            const split = splits.find(s => s.user_id === id);
+            const splitAmount = split ? split.amount : 0;
+            expenseRow[`${name} Split`] = splitAmount;
+            
+            // Track member split amounts (only for non-deposit expenses)
+            if (splitAmount > 0 && tx.expense_payment_source !== 'deposit') {
+              memberSplit.set(id, (memberSplit.get(id) || 0) + splitAmount);
+            }
           });
+
+          expenses.push(expenseRow);
         } else if (tx.type === 'income') {
-          incomes.push({
+          // For income, determine the type and place amount in correct column
+          const incomeRow: any = {
             Date: date,
-            Payer: payerName,
-            Category: categoryName,
+            'Member Name': payerName,
             Note: tx.description || '',
-            Amount: amount,
-            Type: tx.income_mode === 'deposit' ? 'Top-up' : tx.income_mode === 'bonus' ? 'Bonus' : tx.income_mode === 'refund' ? 'Refund' : 'Income'
-          });
+            'Income Amount': 0,
+            'Top-up Amount': 0,
+            'Repayment Amount': 0
+          };
+
+          if (tx.income_mode === 'deposit') {
+            incomeRow['Top-up Amount'] = amount;
+          } else {
+            incomeRow['Income Amount'] = amount;
+          }
+
+          incomes.push(incomeRow);
         }
       });
 
       // Add repayments to incomes
       (settlements || []).forEach((s: any) => {
         const date = new Date(s.date || s.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        const senderName = s.sender?.full_name || participantMap.get(s.sender_id) || 'Unknown';
         const receiverName = s.receiver?.full_name || participantMap.get(s.receiver_id) || 'Unknown';
+        const senderName = s.sender?.full_name || participantMap.get(s.sender_id) || 'Unknown';
+        const amount = Number(s.amount || 0);
+        
         incomes.push({
           Date: date,
-          Payer: senderName,
-          Category: 'Repayment',
+          'Member Name': receiverName,
           Note: s.note || `Repayment from ${senderName} to ${receiverName}`,
-          Amount: Number(s.amount || 0),
-          Type: 'Repayment'
+          'Income Amount': 0,
+          'Top-up Amount': 0,
+          'Repayment Amount': amount
         });
+
+        // Track repayments in member balances
+        const receiverId = s.receiver_id;
+        if (receiverId && participantMap.has(receiverId)) {
+          // Receiving repayment reduces what they owe
+          memberSplit.set(receiverId, (memberSplit.get(receiverId) || 0) - amount);
+        }
+        if (s.sender_id && participantMap.has(s.sender_id)) {
+          // Paying repayment increases what they paid
+          memberPaid.set(s.sender_id, (memberPaid.get(s.sender_id) || 0) + amount);
+        }
       });
 
-      // Calculate previous period for comparison
-      const periodDays = Math.ceil((exportEndDate.getTime() - exportStartDate.getTime()) / (1000 * 60 * 60 * 24));
-      const prevStartDate = new Date(exportStartDate);
-      prevStartDate.setDate(prevStartDate.getDate() - periodDays - 1);
+      // Calculate previous period for comparison (equivalent period before the selected range)
+      // Example: If user selects Jan 1-31, calculate Dec 1-31
+      const periodDays = Math.ceil((exportEndDate.getTime() - exportStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      
+      // Calculate end date of previous period (day before start date)
       const prevEndDate = new Date(exportStartDate);
       prevEndDate.setDate(prevEndDate.getDate() - 1);
+      
+      // Calculate start date of previous period (same number of days before)
+      const prevStartDate = new Date(prevEndDate);
+      prevStartDate.setDate(prevStartDate.getDate() - periodDays + 1);
+      
       const prevStartDateStr = prevStartDate.toISOString().split('T')[0];
       const prevEndDateStr = prevEndDate.toISOString().split('T')[0];
 
@@ -618,19 +692,19 @@ export default function SettingsPage() {
       });
 
       // Prepare summary data
-      const totalExpense = expenses.reduce((sum, e) => sum + e.Amount, 0);
-      const totalIncome = incomes.reduce((sum, i) => sum + i.Amount, 0);
+      const totalExpense = expenses.reduce((sum, e) => sum + Number(e['Total Amount'] || 0), 0);
       const summary: any[] = [];
       
-      // Add category breakdown
+      // Add category breakdown with ranking
       const sortedCategories = Array.from(categoryTotals.entries())
         .sort((a, b) => b[1].amount - a[1].amount);
 
-      sortedCategories.forEach(([category, data]) => {
+      sortedCategories.forEach(([category, data], index) => {
         const percentage = totalExpense > 0 ? ((data.amount / totalExpense) * 100).toFixed(2) : '0.00';
         const prevAmount = prevCategoryTotals.get(category) || 0;
         const comparison = prevAmount > 0 ? (((data.amount - prevAmount) / prevAmount) * 100).toFixed(2) : 'N/A';
         summary.push({
+          'Rank (No.)': index + 1,
           Category: category,
           'Total Amount': data.amount,
           'Percentage (%)': `${percentage}%`,
@@ -641,6 +715,7 @@ export default function SettingsPage() {
 
       // Add totals row
       summary.push({
+        'Rank (No.)': '',
         Category: 'TOTAL',
         'Total Amount': totalExpense,
         'Percentage (%)': '100.00%',
@@ -648,71 +723,201 @@ export default function SettingsPage() {
         'Comparison (%)': 'N/A'
       });
 
+      // Add empty row
+      summary.push({
+        'Rank (No.)': '',
+        Category: '',
+        'Total Amount': '',
+        'Percentage (%)': '',
+        'Transaction Count': '',
+        'Comparison (%)': ''
+      });
+
+      // Add Public Fund Category Ranking
+      summary.push({
+        'Rank (No.)': '',
+        Category: '=== PUBLIC FUND CATEGORY RANKING ===',
+        'Total Amount': '',
+        'Percentage (%)': '',
+        'Transaction Count': '',
+        'Comparison (%)': ''
+      });
+
+      const sortedPublicCategories = Array.from(publicCategoryTotals.entries())
+        .sort((a, b) => b[1].amount - a[1].amount);
+      
+      const totalPublicExpense = sortedPublicCategories.reduce((sum, [, data]) => sum + data.amount, 0);
+
+      sortedPublicCategories.forEach(([category, data], index) => {
+        const percentage = totalPublicExpense > 0 ? ((data.amount / totalPublicExpense) * 100).toFixed(2) : '0.00';
+        summary.push({
+          'Rank (No.)': index + 1,
+          Category: category,
+          'Total Amount': data.amount,
+          'Percentage (%)': `${percentage}%`,
+          'Transaction Count': data.count,
+          'Comparison (%)': 'N/A'
+        });
+      });
+
+      // Add public fund total
+      if (sortedPublicCategories.length > 0) {
+        summary.push({
+          'Rank (No.)': '',
+          Category: 'PUBLIC FUND TOTAL',
+          'Total Amount': totalPublicExpense,
+          'Percentage (%)': '100.00%',
+          'Transaction Count': sortedPublicCategories.reduce((sum, [, data]) => sum + data.count, 0),
+          'Comparison (%)': 'N/A'
+        });
+      }
+
+      // Add empty row
+      summary.push({
+        'Rank (No.)': '',
+        Category: '',
+        'Total Amount': '',
+        'Percentage (%)': '',
+        'Transaction Count': '',
+        'Comparison (%)': ''
+      });
+
+      // Add Final Settlement section
+      summary.push({
+        'Rank (No.)': '',
+        Category: '=== FINAL SETTLEMENT (Positive = Receive / Negative = Pay) ===',
+        'Total Amount': '',
+        'Percentage (%)': '',
+        'Transaction Count': '',
+        'Comparison (%)': ''
+      });
+
+      // Calculate net balance for each member
+      memberIds.forEach(({ id, name }) => {
+        const paid = memberPaid.get(id) || 0;
+        const split = memberSplit.get(id) || 0;
+        const netBalance = paid - split;
+        summary.push({
+          'Rank (No.)': '',
+          Category: name,
+          'Total Amount': netBalance,
+          'Percentage (%)': `Paid: ${paid.toFixed(2)}, Split: ${split.toFixed(2)}`,
+          'Transaction Count': '',
+          'Comparison (%)': netBalance >= 0 ? 'Receive' : 'Pay'
+        });
+      });
+
       // Create workbook
       const wb = XLSX.utils.book_new();
 
       // Sheet 1: Expenses
       const wsExpenses = XLSX.utils.json_to_sheet(expenses);
-      wsExpenses['!cols'] = [
+      const expenseCols = [
         { wch: 12 }, // Date
         { wch: 15 }, // Payer
         { wch: 15 }, // Category
         { wch: 25 }, // Note
-        { wch: 12 }, // Amount
-        { wch: 30 }, // Split Details
+        { wch: 12 }, // Total Amount
         { wch: 18 }  // Public Fund Amount
       ];
+      // Add column width for each member split column
+      memberIds.forEach(() => {
+        expenseCols.push({ wch: 15 }); // Each member split column
+      });
+      wsExpenses['!cols'] = expenseCols;
+      
+      // Make header row bold
+      const expenseRange = XLSX.utils.decode_range(wsExpenses['!ref'] || 'A1');
+      for (let col = expenseRange.s.c; col <= expenseRange.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (wsExpenses[cellAddress]) {
+          if (!wsExpenses[cellAddress].s) wsExpenses[cellAddress].s = {};
+          wsExpenses[cellAddress].s.font = { bold: true };
+        }
+      }
+      
       XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expenses');
 
       // Sheet 2: Incomes & Top-ups
       const wsIncomes = XLSX.utils.json_to_sheet(incomes);
       wsIncomes['!cols'] = [
         { wch: 12 }, // Date
-        { wch: 15 }, // Payer
-        { wch: 15 }, // Category
+        { wch: 18 }, // Member Name
         { wch: 25 }, // Note
-        { wch: 12 }, // Amount
-        { wch: 12 }  // Type
+        { wch: 15 }, // Income Amount
+        { wch: 15 }, // Top-up Amount
+        { wch: 18 }  // Repayment Amount
       ];
+      
+      // Make header row bold
+      const incomeRange = XLSX.utils.decode_range(wsIncomes['!ref'] || 'A1');
+      for (let col = incomeRange.s.c; col <= incomeRange.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (wsIncomes[cellAddress]) {
+          if (!wsIncomes[cellAddress].s) wsIncomes[cellAddress].s = {};
+          wsIncomes[cellAddress].s.font = { bold: true };
+        }
+      }
+      
       XLSX.utils.book_append_sheet(wb, wsIncomes, 'Incomes & Top-ups');
 
       // Sheet 3: Summary
       const wsSummary = XLSX.utils.json_to_sheet(summary);
       wsSummary['!cols'] = [
-        { wch: 15 }, // Category
+        { wch: 10 }, // Rank (No.)
+        { wch: 30 }, // Category (wider for section headers)
         { wch: 15 }, // Total Amount
         { wch: 15 }, // Percentage
         { wch: 18 }, // Transaction Count
-        { wch: 15 }  // Comparison
+        { wch: 20 }  // Comparison / Notes
       ];
       
-      // Make total row bold (Note: xlsx library has limited style support)
-      // We'll add a visual indicator by prefixing with "TOTAL: " in the Category column
-      // For better styling, consider using xlsx-js-style or exceljs library
-      const totalRowIndex = summary.length - 1; // Last row is the total
-      const range = XLSX.utils.decode_range(wsSummary['!ref'] || 'A1');
-      // Try to apply styles (may not work in all Excel versions)
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: col });
-        if (!wsSummary[cellAddress]) {
-          // Create cell if it doesn't exist
-          wsSummary[cellAddress] = { v: summary[totalRowIndex][Object.keys(summary[totalRowIndex])[col]] || '' };
+      // Make header row bold
+      const summaryRange = XLSX.utils.decode_range(wsSummary['!ref'] || 'A1');
+      for (let col = summaryRange.s.c; col <= summaryRange.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (wsSummary[cellAddress]) {
+          if (!wsSummary[cellAddress].s) wsSummary[cellAddress].s = {};
+          wsSummary[cellAddress].s.font = { bold: true };
         }
-        // Apply style (limited support in xlsx)
-        if (!wsSummary[cellAddress].s) {
-          wsSummary[cellAddress].s = {};
-        }
-        wsSummary[cellAddress].s.font = { bold: true };
-        wsSummary[cellAddress].s.fill = { fgColor: { rgb: 'E0E0E0' } };
       }
+
+      // Make section headers and totals bold
+      summary.forEach((row, index) => {
+        const rowIndex = index + 1; // +1 because header is row 0
+        if (row.Category && (
+          row.Category.includes('===') ||
+          row.Category === 'TOTAL' ||
+          row.Category === 'PUBLIC FUND TOTAL' ||
+          (row['Rank (No.)'] === '' && row.Category !== '')
+        )) {
+          for (let col = summaryRange.s.c; col <= summaryRange.e.c; col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: col });
+            const colKey = Object.keys(row)[col];
+            if (colKey) {
+              if (!wsSummary[cellAddress]) {
+                wsSummary[cellAddress] = { v: row[colKey] };
+              }
+              if (!wsSummary[cellAddress].s) wsSummary[cellAddress].s = {};
+              wsSummary[cellAddress].s.font = { bold: true };
+              if (row.Category.includes('===') || row.Category === 'TOTAL' || row.Category === 'PUBLIC FUND TOTAL') {
+                wsSummary[cellAddress].s.fill = { fgColor: { rgb: 'E0E0E0' } };
+              }
+            }
+          }
+        }
+      });
 
       XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
 
       // Generate filename
       const fileName = `${targetBook.name}_${startDateStr}_to_${endDateStr}.xlsx`;
 
-      // Write file
-      XLSX.writeFile(wb, fileName);
+      // Write file with cell styles enabled
+      XLSX.writeFile(wb, fileName, { 
+        cellStyles: true,
+        bookType: 'xlsx'
+      });
 
       setShowExportModal(false);
       showAlert('Success', 'Excel file exported successfully!');
