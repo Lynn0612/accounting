@@ -717,14 +717,25 @@ export default function SettingsPage() {
       sortedCategories.forEach(([category, data], index) => {
         const percentage = totalExpense > 0 ? ((data.amount / totalExpense) * 100).toFixed(2) : '0.00';
         const prevAmount = prevCategoryTotals.get(category) || 0;
-        const comparison = prevAmount > 0 ? (((data.amount - prevAmount) / prevAmount) * 100).toFixed(2) : 'N/A';
+        
+        // Fix 3: Calculate comparison with both percentage and amount difference
+        let comparisonText = 'N/A';
+        if (prevAmount > 0) {
+          const diffPercentage = ((data.amount - prevAmount) / prevAmount) * 100;
+          const diffAmount = data.amount - prevAmount;
+          comparisonText = `${diffPercentage >= 0 ? '+' : ''}${diffPercentage.toFixed(2)}% (${diffAmount >= 0 ? '+' : ''}${diffAmount.toFixed(2)})`;
+        } else if (data.amount > 0 && prevAmount === 0) {
+          // New category
+          comparisonText = `New (+${data.amount.toFixed(2)})`;
+        }
+        
         summary.push({
-          'Rank (No.)': index + 1,
+          'TOP': index + 1, // Fix 3: Show ranking in TOP column (column A)
           Category: category,
           'Total Amount': data.amount,
           'Percentage (%)': `${percentage}%`,
           'Transaction Count': data.count,
-          'Comparison (%)': comparison !== 'N/A' ? `${comparison}%` : 'N/A'
+          'Comparison (%)': comparisonText
         });
       });
 
@@ -842,6 +853,25 @@ export default function SettingsPage() {
       // Create workbook
       const wb = XLSX.utils.book_new();
 
+      // Fix 1: Add totals row to Expenses sheet - TOTAL in column A (Date column)
+      if (expenses.length > 0) {
+        const expenseKeys = Object.keys(expenses[0]);
+        const totalRow: any = {};
+        expenseKeys.forEach(key => {
+          if (key === 'Date') {
+            totalRow[key] = 'TOTAL'; // Put TOTAL in Date column (column A)
+          } else if (key === 'Payer' || key === 'Category' || key === 'Note') {
+            totalRow[key] = '';
+          } else if (typeof expenses[0][key] === 'number') {
+            // Sum all numeric columns
+            totalRow[key] = expenses.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
+          } else {
+            totalRow[key] = '';
+          }
+        });
+        expenses.push(totalRow);
+      }
+
       // Sheet 1: Expenses
       const wsExpenses = XLSX.utils.json_to_sheet(expenses);
       const expenseCols = [
@@ -882,13 +912,15 @@ export default function SettingsPage() {
       
       XLSX.utils.book_append_sheet(wb, wsExpenses, 'Expenses');
 
-      // Fix 3: Add totals row to Incomes sheet
+      // Fix 2: Add totals row to Incomes sheet - TOTAL in column A (Date column), not Category column
       if (incomes.length > 0) {
         const incomeKeys = Object.keys(incomes[0]);
         const totalRow: any = {};
         incomeKeys.forEach(key => {
-          if (key === 'Date' || key === 'Member Name' || key === 'Category' || key === 'Note') {
-            totalRow[key] = key === 'Category' ? 'TOTAL' : '';
+          if (key === 'Date') {
+            totalRow[key] = 'TOTAL'; // Put TOTAL in Date column (column A), not Category
+          } else if (key === 'Member Name' || key === 'Category' || key === 'Note') {
+            totalRow[key] = '';
           } else if (typeof incomes[0][key] === 'number') {
             // Sum all numeric columns
             totalRow[key] = incomes.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
