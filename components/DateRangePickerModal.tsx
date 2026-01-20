@@ -106,30 +106,40 @@ export default function DateRangePickerModal({
   };
 
   const isDateInRange = (day: number, monthOffset: number = 0) => {
+    if (!startDate || !endDate) return false;
     const date = new Date(
       currentMonth.getFullYear(),
       currentMonth.getMonth() + monthOffset,
       day
     );
-    return date > startDate && date < endDate;
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    return dateOnly > startOnly && dateOnly < endOnly;
   };
 
   const isStartDate = (day: number, monthOffset: number = 0) => {
+    if (!startDate) return false;
     const date = new Date(
       currentMonth.getFullYear(),
       currentMonth.getMonth() + monthOffset,
       day
     );
-    return date.toDateString() === startDate.toDateString();
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const startOnly = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    return dateOnly.getTime() === startOnly.getTime();
   };
 
   const isEndDate = (day: number, monthOffset: number = 0) => {
+    if (!endDate) return false;
     const date = new Date(
       currentMonth.getFullYear(),
       currentMonth.getMonth() + monthOffset,
       day
     );
-    return date.toDateString() === endDate.toDateString();
+    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const endOnly = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+    return dateOnly.getTime() === endOnly.getTime();
   };
 
   if (!isOpen) return null;
