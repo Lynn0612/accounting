@@ -6,6 +6,7 @@ export interface Participant {
   name: string
   avatar?: string
   isPayer?: boolean
+  role?: 'Owner' | 'Member' | 'Viewer' | null
 }
 
 const getParticipants = async (ledgerId: string, currentUserId: string): Promise<Participant[]> => {
@@ -30,10 +31,10 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
   const isBook = !bookCheck.error && bookCheck.data && bookCheck.data.length > 0
 
   if (isLedger) {
-    // It's a ledger - fetch members first, then profiles in parallel
+    // It's a ledger - fetch members with roles first, then profiles in parallel
     const membersResult = await supabase
       .from('ledger_members')
-      .select('user_id')
+      .select('user_id, role')
       .eq('ledger_id', ledgerId)
 
     if (membersResult.error) {
@@ -41,7 +42,10 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
       return []
     }
 
-    const userIds = membersResult.data?.map(m => m.user_id) || []
+    const membersData = membersResult.data || []
+    const userIds = membersData.map(m => m.user_id)
+    const roleMap = new Map(membersData.map(m => [m.user_id, m.role as 'Owner' | 'Member' | 'Viewer' | null]))
+    
     if (userIds.length === 0) {
       return []
     }
@@ -61,6 +65,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
 
     const membersList: Participant[] = []
     const currentUserProfile = profileMap.get(currentUserId)
+    const currentUserRole = roleMap.get(currentUserId)
     
     // Add current user first
     membersList.push({
@@ -68,6 +73,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
       name: currentUserProfile?.full_name || 'You',
       avatar: currentUserProfile?.avatar_url || undefined,
       isPayer: true,
+      role: currentUserRole || null,
     })
 
     // Add other members (filter out Unknown and 3 test, only show 2 Test)
@@ -83,6 +89,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
               name: fullName,
             avatar: profile.avatar_url || undefined,
             isPayer: false,
+            role: roleMap.get(userId) || null,
           })
           }
         }
@@ -91,10 +98,10 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
 
     return membersList
   } else if (isBook) {
-    // It's an account_book - fetch members first, then profiles
+    // It's an account_book - fetch members with roles first, then profiles
     const membersResult = await supabase
       .from('book_members')
-      .select('user_id')
+      .select('user_id, role')
       .eq('book_id', ledgerId)
 
     if (membersResult.error) {
@@ -102,7 +109,10 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
       return []
     }
 
-    const userIds = membersResult.data?.map(m => m.user_id) || []
+    const membersData = membersResult.data || []
+    const userIds = membersData.map(m => m.user_id)
+    const roleMap = new Map(membersData.map(m => [m.user_id, m.role as 'Owner' | 'Member' | 'Viewer' | null]))
+    
     if (userIds.length === 0) {
       return []
     }
@@ -122,6 +132,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
 
     const membersList: Participant[] = []
     const currentUserProfile = profileMap.get(currentUserId)
+    const currentUserRole = roleMap.get(currentUserId)
     
     // Add current user first
     membersList.push({
@@ -129,6 +140,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
       name: currentUserProfile?.full_name || 'You',
       avatar: currentUserProfile?.avatar_url || undefined,
       isPayer: true,
+      role: currentUserRole || null,
     })
 
     // Add other members (filter out Unknown and 3 test, only show 2 Test)
@@ -144,6 +156,7 @@ const getParticipants = async (ledgerId: string, currentUserId: string): Promise
               name: fullName,
             avatar: profile.avatar_url || undefined,
             isPayer: false,
+            role: roleMap.get(userId) || null,
           })
           }
         }
