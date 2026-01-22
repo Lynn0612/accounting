@@ -577,12 +577,15 @@ export default function EditTransactionPage() {
           return sum + Math.ceil(n)
         }, 0)
 
-        // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
-        // Default calculation: (Total Amount - Sum of Manual Split Amounts) / (Count of Active Members - Count of Viewers)
-        const calculatedPublicAmount = sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / activeMembers.length)
+        // Shared expense amount field: 
+        // - If there are split amounts: (total - split amounts) (not divided by count)
+        // - If no split amounts: total (not divided)
+        const calculatedPublicAmount = sumCustom > 0
+          ? (totalInt - sumCustom) // Show remaining amount, not divided
+          : totalInt // Show total, not divided
 
         if (!publicAmountManuallySet) {
-          setPublicAmount(calculatedPublicAmount.toString())
+          setPublicAmount(Math.ceil(calculatedPublicAmount).toString())
           setPublicAmountManuallySet(false)
         }
       }
@@ -1068,13 +1071,46 @@ export default function EditTransactionPage() {
         // Expense mode: Update transaction and splits (supports Shared expense like /add)
         const categoryId: string | null = selectedCategory
         if (isPublicExpense) {
-          const p = parseFloat(publicAmount)
-          if (!publicAmount || isNaN(p) || p <= 0) {
+          // Filter out Viewers from participants for calculation
+          const activeMembers = participants.filter((p) => p.role !== 'Viewer')
+          const activeMemberCount = Math.max(1, activeMembers.length || 1)
+          
+          // Calculate sum of custom split amounts (from split_with)
+          const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+            const v = customSplitAmounts[id]
+            const n = Number(v)
+            if (v === undefined || v === '' || isNaN(n) || n <= 0) return sum
+            return sum + Math.ceil(n)
+          }, 0)
+          
+          // Check if there is split_with (excluding payer)
+          const effectiveSplitWithIds =
+            selectedParticipantIds.length > 0
+              ? selectedParticipantIds
+              : payerId === DEPOSIT_PAYER_ID
+                ? participants.map((p) => p.id).filter(Boolean)
+                : payerId
+                  ? [payerId]
+                  : []
+          const hasSplitWith = effectiveSplitWithIds.length > 0 && effectiveSplitWithIds.some(id => id !== payerId)
+          
+          // Shared expense amount field shows total (not divided), but calculation uses per-person share
+          // If user manually set publicAmount, use it; otherwise use total (or total - split amounts)
+          const defaultPublicAmount = sumCustom > 0
+            ? (totalInt - sumCustom) // Show remaining amount, not divided
+            : totalInt // Show total, not divided
+          
+          const finalPublicAmount = publicAmount && parseFloat(publicAmount) > 0
+            ? parseFloat(publicAmount)
+            : defaultPublicAmount
+          
+          const p = finalPublicAmount
+          if (isNaN(p) || p <= 0) {
             handleError(null, 'please enter public amount')
             setSaving(false)
             return
           }
-          if (totalInt > 0 && !isNaN(p) && Math.ceil(p) > totalInt) {
+          if (totalInt > 0 && Math.ceil(p) > totalInt) {
             handleError(null, 'public amount cannot exceed total amount')
             setSaving(false)
             return
@@ -1103,7 +1139,34 @@ export default function EditTransactionPage() {
               return Object.keys(obj).length > 0 ? obj : null
             })(),
             is_public_expense: !!isPublicExpense,
-            public_amount: isPublicExpense ? Math.ceil(parseFloat(publicAmount) || 0) : null,
+            public_amount: isPublicExpense ? (() => {
+              // Use the same calculation as validation above
+              const activeMembers = participants.filter((p) => p.role !== 'Viewer')
+              const activeMemberCount = Math.max(1, activeMembers.length || 1)
+              const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+                const v = customSplitAmounts[id]
+                const n = Number(v)
+                if (v === undefined || v === '' || isNaN(n) || n <= 0) return sum
+                return sum + Math.ceil(n)
+              }, 0)
+              const effectiveSplitWithIds =
+                selectedParticipantIds.length > 0
+                  ? selectedParticipantIds
+                  : payerId === DEPOSIT_PAYER_ID
+                    ? participants.map((p) => p.id).filter(Boolean)
+                    : payerId
+                      ? [payerId]
+                      : []
+              // Shared expense amount field shows total (not divided), but calculation uses per-person share
+              // If user manually set publicAmount, use it; otherwise use total (or total - split amounts)
+              const defaultPublicAmount = sumCustom > 0
+                ? (totalInt - sumCustom) // Show remaining amount, not divided
+                : totalInt // Show total, not divided
+              const finalPublicAmount = publicAmount && parseFloat(publicAmount) > 0
+                ? parseFloat(publicAmount)
+                : defaultPublicAmount
+              return Math.ceil(finalPublicAmount)
+            })() : null,
             public_share_participant_ids:
               isPublicExpense && publicShareParticipantIds.length > 0 ? publicShareParticipantIds : null,
             expense_payment_source: payerId === DEPOSIT_PAYER_ID ? 'deposit' : 'personal',
@@ -1380,10 +1443,24 @@ export default function EditTransactionPage() {
       // Filter out Viewers from participants for calculation
       const activeMembersForCalc = participants.filter((p) => p.role !== 'Viewer')
       const activeMemberCountForCalc = Math.max(1, activeMembersForCalc.length || 1)
-      const rawPublicAmount =
-        publicAmount && parseFloat(publicAmount) > 0
-          ? parseFloat(publicAmount)
-          : totalInt / activeMemberCountForCalc
+      
+      // Calculate sum of custom split amounts (from split_with)
+      const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+        const v = customSplitAmounts[id]
+        const n = Number(v)
+        if (v === undefined || v === '' || isNaN(n) || n <= 0) return sum
+        return sum + Math.ceil(n)
+      }, 0)
+      
+      // Shared expense amount field shows total (not divided), but calculation uses per-person share
+      // If user manually set publicAmount, use it; otherwise use total (or total - split amounts)
+      const defaultPublicAmount = sumCustom > 0
+        ? (totalInt - sumCustom) // Show remaining amount, not divided
+        : totalInt // Show total, not divided
+      
+      const rawPublicAmount = publicAmount && parseFloat(publicAmount) > 0
+        ? parseFloat(publicAmount)
+        : defaultPublicAmount
       const finalPublicAmount = Math.ceil(Math.max(0, Math.min(rawPublicAmount, totalInt)))
 
       const remainingAmount = totalInt - finalPublicAmount
@@ -2371,12 +2448,14 @@ export default function EditTransactionPage() {
                           return sum + Math.ceil(n)
                         }, 0)
                         
-                        // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
-                        const calculatedPublicAmount = sumCustom > 0 
-                          ? Math.max(0, totalInt - sumCustom) 
-                          : Math.ceil(totalInt / activeMemberCount)
+                        // Shared expense amount field: 
+                        // - If there are split amounts: (total - split amounts) (not divided by count)
+                        // - If no split amounts: total (not divided)
+                        const calculatedPublicAmount = sumCustom > 0
+                          ? (totalInt - sumCustom) // Show remaining amount, not divided
+                          : totalInt // Show total, not divided
                         
-                        return calculatedPublicAmount.toString()
+                        return Math.ceil(calculatedPublicAmount).toString()
                       }
                       // If user manually set, show their value
                       return publicAmount
@@ -2442,12 +2521,12 @@ export default function EditTransactionPage() {
                         return sum + Math.ceil(n)
                       }, 0)
                       
-                      // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
-                      const calculatedPublicAmount = sumCustom > 0 
-                        ? Math.max(0, totalInt - sumCustom) 
-                        : Math.ceil(totalInt / activeMemberCount)
+                      // Default: Show per-person share amount (Total - Split amounts) / activeMemberCount
+                      const perPersonShare = sumCustom > 0
+                        ? (totalInt - sumCustom) / activeMemberCount
+                        : totalInt / activeMemberCount
                       
-                      return calculatedPublicAmount.toFixed(0)
+                      return Math.ceil(perPersonShare).toFixed(0)
                     })()} (Total ÷ {(() => {
                       const activeMembers = participants.filter((p) => p.role !== 'Viewer')
                       return activeMembers.length

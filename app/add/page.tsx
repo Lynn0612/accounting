@@ -600,12 +600,18 @@ function AddTransactionPageContent() {
             return sum + Math.ceil(n);
           }, 0);
 
-          // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
-          // Default calculation: (Total Amount - Sum of Manual Split Amounts) / (Count of Active Members - Count of Viewers)
-          const calculatedPublicAmount =
-            sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / activeMemberCount);
+          // Check if there is split_with (excluding payer)
+          const hasSplitWith = selectedParticipantIds.length > 0 && selectedParticipantIds.some(id => id !== payerId);
 
-          setPublicAmount(calculatedPublicAmount.toString());
+          // Shared expense amount field: 
+          // - If there are split amounts: (total - split amounts) (not divided by count)
+          // - If no split amounts and no split_with: total (all is public expense, not divided)
+          // - If no split amounts but has split_with: total (not divided)
+          const calculatedPublicAmount = sumCustom > 0
+            ? (totalInt - sumCustom) // Show remaining amount, not divided
+            : totalInt; // Always show total, not divided
+
+          setPublicAmount(Math.ceil(calculatedPublicAmount).toString());
         }
       }
     } else {
@@ -766,8 +772,22 @@ function AddTransactionPageContent() {
       const activeMembers = participants.filter((p) => p.role !== 'Viewer');
       const activeMemberCount = Math.max(1, activeMembers.length || 1);
       
-      const rawPublicAmount =
-        publicAmount && parseFloat(publicAmount) > 0 ? parseFloat(publicAmount) : totalInt / activeMemberCount;
+      // Calculate sum of custom split amounts (from split_with)
+      const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+        const v = customSplitAmounts[id];
+        const n = Number(v);
+        if (v === undefined || v === "" || isNaN(n) || n <= 0) return sum;
+        return sum + Math.ceil(n);
+      }, 0);
+      
+      // Shared expense amount field shows total (not divided), but calculation uses per-person share
+      // If user manually set publicAmount, use it; otherwise use total (or total - split amounts)
+      const rawPublicAmount = publicAmount && parseFloat(publicAmount) > 0 
+        ? parseFloat(publicAmount)
+        : sumCustom > 0
+          ? (totalInt - sumCustom) // Show remaining amount, not divided
+          : totalInt; // Show total, not divided
+      
       const finalPublicAmount = Math.ceil(Math.max(0, Math.min(rawPublicAmount, totalInt)));
 
       const remainingAmount = totalInt - finalPublicAmount;
@@ -1253,8 +1273,20 @@ function AddTransactionPageContent() {
         const activeMembers = participants.filter((p) => p.role !== 'Viewer');
         const activeMemberCount = Math.max(1, activeMembers.length || 1);
         
-        // Public amount: default = Total ÷ active member count (excluding Viewers) (can be manually changed)
-        const defaultPublicAmount = totalInt / activeMemberCount;
+        // Calculate sum of custom split amounts (from split_with)
+        const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+          const v = customSplitAmounts[id];
+          const n = Number(v);
+          if (v === undefined || v === "" || isNaN(n) || n <= 0) return sum;
+          return sum + Math.ceil(n);
+        }, 0);
+        
+        // Shared expense amount field shows total (not divided), but calculation uses per-person share
+        // If user manually set publicAmount, use it; otherwise use total (or total - split amounts)
+        const defaultPublicAmount = sumCustom > 0
+          ? (totalInt - sumCustom) // Show remaining amount, not divided
+          : totalInt; // Show total, not divided
+        
         const finalPublicAmount = publicAmount && parseFloat(publicAmount) > 0 
           ? parseFloat(publicAmount) 
           : defaultPublicAmount;
@@ -2134,12 +2166,20 @@ function AddTransactionPageContent() {
                         return sum + Math.ceil(n);
                       }, 0);
                       
-                      // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
-                      const calculatedPublicAmount = sumCustom > 0 
-                        ? Math.max(0, totalInt - sumCustom) 
-                        : Math.ceil(totalInt / activeMemberCount);
+                      // Check if there is split_with (excluding payer)
+                      const hasSplitWith = selectedParticipantIds.length > 0 && selectedParticipantIds.some(id => id !== payerId);
                       
-                      return calculatedPublicAmount.toString();
+                      // Shared expense amount field: 
+                      // - If there are split amounts: (total - split amounts) (not divided by count)
+                      // - If no split amounts and no split_with: total (all is public expense, not divided)
+                      // - If no split amounts but has split_with: (total - split amounts) (not divided by count)
+                      const calculatedPublicAmount = sumCustom > 0
+                        ? (totalInt - sumCustom) // Show remaining amount, not divided
+                        : hasSplitWith
+                          ? totalInt // Show total, not divided
+                          : totalInt; // If no split_with, show total (all is public expense)
+                      
+                      return Math.ceil(calculatedPublicAmount).toString();
                     }
                     // If user manually set, show their value
                     return publicAmount;
@@ -2189,13 +2229,13 @@ function AddTransactionPageContent() {
                   className="w-full bg-background-light rounded-xl border-none py-3 px-4 text-text-main font-semibold focus:ring-2 focus:ring-primary/20 placeholder-text-muted/50 transition-shadow cursor-pointer"
                   readOnly
                 />
-                <p className="text-xs text-text-muted mt-2">
+                  <p className="text-xs text-text-muted mt-2">
                   Default: ${(() => {
                     const total = parseFloat(amount) || 0
                     const totalInt = Math.ceil(total)
                     // Filter out Viewers from participants for calculation
-                    const activeMembers = participants.filter((p) => p.role !== 'Viewer')
-                    const activeMemberCount = Math.max(1, activeMembers.length || 1)
+                    const activeMembersForDefault = participants.filter((p) => p.role !== 'Viewer')
+                    const activeMemberCountForDefault = Math.max(1, activeMembersForDefault.length || 1)
                     
                     // Calculate sum of custom split amounts (from split_with)
                     const sumCustom = selectedParticipantIds.reduce((sum, id) => {
@@ -2205,17 +2245,17 @@ function AddTransactionPageContent() {
                       return sum + Math.ceil(n)
                     }, 0)
                     
-                    // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
-                    const calculatedPublicAmount = sumCustom > 0 
-                      ? Math.max(0, totalInt - sumCustom) 
-                      : Math.ceil(totalInt / activeMemberCount)
+                    // Default: Show per-person share amount (Total - Split amounts) / activeMemberCount
+                    const perPersonShare = sumCustom > 0
+                      ? (totalInt - sumCustom) / activeMemberCountForDefault
+                      : totalInt / activeMemberCountForDefault
                     
-                    return calculatedPublicAmount.toFixed(0)
+                    return Math.ceil(perPersonShare).toFixed(0)
                   })()} (Total ÷ {(() => {
-                    const activeMembers = participants.filter((p) => p.role !== 'Viewer')
-                    return activeMembers.length
+                    const activeMembersForDefault = participants.filter((p) => p.role !== 'Viewer')
+                    return activeMembersForDefault.length
                   })()})
-                </p>
+                  </p>
                 <div className="mt-4">
                   <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
                   Shared with(Shared expense)
