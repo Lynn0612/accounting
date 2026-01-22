@@ -592,6 +592,7 @@ function AddTransactionPageContent() {
             : activeMemberCount;
           const memberCount = Math.max(1, publicShareCount || 1);
 
+          // Calculate sum of custom split amounts (from split_with)
           const sumCustom = selectedParticipantIds.reduce((sum, id) => {
             const v = customSplitAmounts[id];
             const n = Number(v);
@@ -600,8 +601,9 @@ function AddTransactionPageContent() {
           }, 0);
 
           // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
+          // Default calculation: (Total Amount - Sum of Manual Split Amounts) / (Count of Active Members - Count of Viewers)
           const calculatedPublicAmount =
-            sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / memberCount);
+            sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / activeMemberCount);
 
           setPublicAmount(calculatedPublicAmount.toString());
         }
@@ -1296,6 +1298,9 @@ function AddTransactionPageContent() {
         const publicSharePerPerson = Math.ceil(publicInt / publicShareCount);
         
         // Personal Share ($R): Split among Split with participants (empty => payer-only), allow custom amounts
+        // IMPORTANT: If shared with only selects one member, but split with has others,
+        // those others still need to pay (personal share only, no public share)
+        // Note: Viewer can be in split_with, but they won't be in public share
         const personalShareParticipants = effectiveSplitWithIds;
         const personalShares = computeCustomSplits(remainingAmount, personalShareParticipants);
         if (!personalShares.ok) {
@@ -1306,6 +1311,9 @@ function AddTransactionPageContent() {
         
         // Calculate each participant's debt
         // Debtors should include EVERYONE who has either a personal share or a public share
+        // IMPORTANT: Even if shared with only selects one member, split with participants still need to pay
+        // (they just don't pay the public share part)
+        // Note: Viewer can be in split_with, but they won't be in public share participants
         const allPotentialDebtorIds = [...new Set([...effectiveSplitWithIds, ...basePublicShareIds])];
         
         // Calculate total public share after rounding up

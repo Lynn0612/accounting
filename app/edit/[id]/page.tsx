@@ -569,6 +569,7 @@ export default function EditTransactionPage() {
           : activeMembers.length
         const memberCount = Math.max(1, publicShareCount || 1)
 
+        // Calculate sum of custom split amounts (from split_with)
         const sumCustom = selectedParticipantIds.reduce((sum, id) => {
           const v = customSplitAmounts[id]
           const n = Number(v)
@@ -576,7 +577,9 @@ export default function EditTransactionPage() {
           return sum + Math.ceil(n)
         }, 0)
 
-        const calculatedPublicAmount = sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / memberCount)
+        // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
+        // Default calculation: (Total Amount - Sum of Manual Split Amounts) / (Count of Active Members - Count of Viewers)
+        const calculatedPublicAmount = sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / activeMembers.length)
 
         if (!publicAmountManuallySet) {
           setPublicAmount(calculatedPublicAmount.toString())
@@ -1192,6 +1195,8 @@ export default function EditTransactionPage() {
             }
 
             // Debtors: union of selected participants + public share participants (exclude payer)
+            // IMPORTANT: Even if shared with only selects one member, split with participants still need to pay
+            // (they just don't pay the public share part)
             const allPotentialDebtorIds = [...new Set([...effectiveSplitWithIds, ...basePublicShareIds])]
 
             // Calculate total public share after rounding up
