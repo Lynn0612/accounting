@@ -60,7 +60,14 @@ export default function SelectParticipants({
     if (!allowEmpty && localSelected.length === 0) {
       return;
     }
-    onConfirm(localSelected);
+    // If disableViewers is true, filter out any Viewer IDs from the selection
+    const filteredIds = disableViewers
+      ? localSelected.filter((id) => {
+          const participant = participants.find((p) => p.id === id);
+          return participant && participant.role !== 'Viewer';
+        })
+      : localSelected;
+    onConfirm(filteredIds);
     onClose();
   };
 
