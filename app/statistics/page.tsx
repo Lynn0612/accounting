@@ -202,6 +202,7 @@ export default function StatisticsPage() {
           income_mode,
           expense_payment_source,
           is_public_expense,
+          public_amount,
           categories (
             id,
             name,
@@ -249,7 +250,10 @@ export default function StatisticsPage() {
       let grandTotal = 0
 
       transactions.forEach((tx: any) => {
-        const amount = parseFloat(tx.amount) || 0
+        // For public expenses when showSharedExpenseOnly is true, use public_amount instead of amount
+        const amount = (showSharedExpenseOnly && statType === 'expense' && tx.is_public_expense && tx.public_amount != null)
+          ? parseFloat(tx.public_amount) || 0
+          : parseFloat(tx.amount) || 0
         grandTotal += amount
         // For income: check income_mode === 'deposit'
         // For expense: check expense_payment_source === 'deposit'

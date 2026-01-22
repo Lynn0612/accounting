@@ -187,15 +187,17 @@ const HomePageClient = memo(function HomePageClient({
   }, [monthlyTransactions]);
 
   // Calculate Total Shared Expense (公費總支出)
+  // Only add the public_amount (公費金額), not the total transaction amount
   const totalSharedExpense = useMemo(() => {
     const transactionsToUse = allMonthlyTransactions || [];
     return transactionsToUse
       .filter((tx: any) => 
         tx.type === 'expense' && 
         tx.is_public_expense === true &&
-        tx.expense_payment_source !== 'deposit'
+        tx.expense_payment_source !== 'deposit' &&
+        tx.public_amount != null // Only count transactions with public_amount
       )
-      .reduce((sum, tx) => sum + Number(tx.amount), 0);
+      .reduce((sum, tx) => sum + Number(tx.public_amount || 0), 0);
   }, [allMonthlyTransactions]);
 
   // 顯示該使用者的個人結餘 (只限本月) - memoize to avoid recalculation

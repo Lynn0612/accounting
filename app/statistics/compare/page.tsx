@@ -208,10 +208,10 @@ function ComparePageContent() {
         transactions.forEach((tx: any) => {
           if (!tx || !tx.category_id) return
           
-          // For public expense comparison, use public_amount if available, otherwise use amount
+          // For public expense comparison, use public_amount if available, otherwise use 0 (not amount)
           let amount = parseFloat(tx.amount) || 0
           if (showSharedExpenseOnly && statType === 'expense' && tx.is_public_expense) {
-            amount = parseFloat(tx.public_amount) || parseFloat(tx.amount) || 0
+            amount = tx.public_amount != null ? (parseFloat(tx.public_amount) || 0) : 0
           }
           
           total += amount

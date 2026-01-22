@@ -45,6 +45,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
           expense_payment_source,
           income_mode,
           is_public_expense,
+          public_amount,
           created_at${includeCategory ? ', categories (id, name, icon)' : ''}
         )
       `)
@@ -88,7 +89,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
         .from('transaction_splits')
         .select(`
           amount,
-          transactions!inner (
+            transactions!inner (
             id,
             description,
             date,
@@ -97,6 +98,8 @@ const getTransactions = async (params: TransactionQueryParams) => {
             category_id,
             expense_payment_source,
             income_mode,
+            is_public_expense,
+            public_amount,
             created_at,
             payer:profiles!transactions_payer_id_fkey (id, full_name, avatar_url)${includeCategory ? ', categories (id, name, icon)' : ''}
           )
@@ -154,6 +157,7 @@ const getTransactions = async (params: TransactionQueryParams) => {
       expense_payment_source,
       income_mode,
       is_public_expense,
+      public_amount,
       created_at${includeCategory ? ', categories (id, name, icon)' : ''}${includePayer ? ', payer:profiles!transactions_payer_id_fkey (id, full_name, avatar_url)' : ''}
     `)
     .eq(scopeColumn, ledgerId)
