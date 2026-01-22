@@ -558,10 +558,15 @@ export default function EditTransactionPage() {
       const totalAmount = parseFloat(amount) || 0
       if (totalAmount > 0) {
         const totalInt = Math.ceil(totalAmount)
-        // Use public share participants count if set, otherwise use all participants
+        // Filter out Viewers from participants for calculation
+        const activeMembers = participants.filter((p) => p.role !== 'Viewer')
+        // Use public share participants count if set, otherwise use all active members (excluding Viewers)
         const publicShareCount = publicShareParticipantIds.length > 0 
-          ? publicShareParticipantIds.length 
-          : participants.length
+          ? publicShareParticipantIds.filter((id) => {
+              const participant = participants.find((p) => p.id === id)
+              return participant && participant.role !== 'Viewer'
+            }).length
+          : activeMembers.length
         const memberCount = Math.max(1, publicShareCount || 1)
 
         const sumCustom = selectedParticipantIds.reduce((sum, id) => {
@@ -584,13 +589,15 @@ export default function EditTransactionPage() {
     }
   }, [amount, isPublicExpense, publicAmountManuallySet, participants.length, selectedParticipantIds, customSplitAmounts])
 
-  const computeCustomSplits = useCallback((total: number, ids: string[], overrideAmounts?: Record<string, string>) => {
+  const computeCustomSplits = useCallback((total: number, ids: string[], overrideAmounts?: Record<string, string>, useFloor: boolean = false) => {
     const totalInt = Math.max(0, Math.ceil(Number(total) || 0))
     const normalizedIds = ids.filter(Boolean)
     const amountsMap = overrideAmounts ?? customSplitAmounts
     const fixed: Record<string, number> = {}
     let fixedSum = 0
     const remainingIds: string[] = []
+
+    const roundFn = useFloor ? Math.floor : Math.ceil
 
     for (const id of normalizedIds) {
       const v = amountsMap[id]
@@ -600,7 +607,7 @@ export default function EditTransactionPage() {
       }
       const n = Number(v)
       if (!isNaN(n) && n >= 0) {
-        const amt = Math.ceil(n)
+        const amt = roundFn(n)
         fixed[id] = amt
         fixedSum += amt
       } else {
@@ -616,11 +623,22 @@ export default function EditTransactionPage() {
     const autoCount = remainingIds.length
     const autoAmounts: Record<string, number> = {}
     if (autoCount > 0) {
-      // Everyone rounds up to integer; any extra due to rounding belongs to payer.
-      const per = Math.ceil(remaining / autoCount)
-      for (let i = 0; i < remainingIds.length; i++) {
-        const id = remainingIds[i]
-        autoAmounts[id] = per
+      if (useFloor) {
+        // For deposits: use Floor (向下取整) so each person's contribution is slightly less
+        const per = Math.floor(remaining / autoCount)
+        const remainder = remaining - (per * autoCount)
+        // Distribute remainder to first few participants
+        for (let i = 0; i < remainingIds.length; i++) {
+          const id = remainingIds[i]
+          autoAmounts[id] = per + (i < remainder ? 1 : 0)
+        }
+      } else {
+        // For expenses: use Ceiling (無條件進位) so each person pays slightly more
+        const per = Math.ceil(remaining / autoCount)
+        for (let i = 0; i < remainingIds.length; i++) {
+          const id = remainingIds[i]
+          autoAmounts[id] = per
+        }
       }
     }
 
@@ -871,7 +889,8 @@ export default function EditTransactionPage() {
             }
 
             const totalInt = Math.ceil(finalAmount)
-            const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts)
+            // For deposits: use Floor (向下取整) so each person's contribution is slightly less
+            const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts, true)
             if (!computed.ok) {
               handleError(null, 'split amount cannot exceed total amount')
               setSaving(false)
@@ -879,14 +898,9 @@ export default function EditTransactionPage() {
             }
             const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0)
             
-            // 檢查分攤金額是否足夠（進位後可能會多一點，但不能少）
-            if (Math.ceil(splitSum) < totalInt) {
-              handleError(null, `split amount total (${Math.ceil(splitSum)}) is less than input total (${totalInt})`)
-              setSaving(false)
-              return
-            }
-            
-            const incomeAmount = Math.ceil(splitSum)
+            // For deposits: Floor rounding may result in slightly less total, which is acceptable
+            // The manager/receiver will receive the actual total amount
+            const incomeAmount = totalInt // Use the original total, not the rounded sum
 
             const { error: updateError } = await supabase
               .from('transactions')
@@ -902,7 +916,7 @@ export default function EditTransactionPage() {
                 split_with_amounts: (() => {
                   const obj: Record<string, number> = {}
                   depositParticipantIds.forEach((id) => {
-                    obj[id] = Math.ceil(computed.amounts[id] || 0)
+                    obj[id] = computed.amounts[id] || 0 // Already rounded with Floor
                   })
                   return obj
                 })(),
@@ -935,7 +949,7 @@ export default function EditTransactionPage() {
               ledger_id: ledgerType === 'ledger' ? ledgerId : null,
               book_id: ledgerType === 'account_book' ? ledgerId : null,
               user_id: id,
-              amount: Math.ceil(computed.amounts[id] || 0),
+              amount: computed.amounts[id] || 0, // Already rounded with Floor
             }))
 
             if (splitRecords.length > 0) {
@@ -1145,11 +1159,17 @@ export default function EditTransactionPage() {
             const remainingAmount = totalInt - publicInt
 
             // Public Share participants:
-            // - If none selected: ALL members share
-            // - If selected: ONLY selected participants share (do NOT force-include payer)
-            const defaultPublicShareIds = participants.map((p) => p.id)
+            // - If none selected: ALL active members (excluding Viewers) share
+            // - If selected: ONLY selected participants share (Viewers are filtered out in UI)
+            // Filter out Viewers from participants for calculation
+            const activeMembers = participants.filter((p) => p.role !== 'Viewer')
+            const defaultPublicShareIds = activeMembers.map((p) => p.id)
             const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
-            const publicShareParticipants = Array.from(new Set(basePublicShareIds))
+            // Filter out Viewers from public share participants
+            const publicShareParticipants = Array.from(new Set(basePublicShareIds)).filter((id) => {
+              const participant = participants.find((p) => p.id === id)
+              return participant && participant.role !== 'Viewer'
+            })
             const publicShareCount = publicShareParticipants.length
 
             if (publicShareCount === 0) {
@@ -1351,16 +1371,26 @@ export default function EditTransactionPage() {
     const finalPayerId = payerId
 
     if (isPublicExpense) {
+      // Filter out Viewers from participants for calculation
+      const activeMembersForCalc = participants.filter((p) => p.role !== 'Viewer')
+      const activeMemberCountForCalc = Math.max(1, activeMembersForCalc.length || 1)
       const rawPublicAmount =
         publicAmount && parseFloat(publicAmount) > 0
           ? parseFloat(publicAmount)
-          : totalInt / Math.max(1, participants.length || 1)
+          : totalInt / activeMemberCountForCalc
       const finalPublicAmount = Math.ceil(Math.max(0, Math.min(rawPublicAmount, totalInt)))
 
       const remainingAmount = totalInt - finalPublicAmount
 
-      const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : participants.map((p) => p.id)
-      const publicShareParticipants = Array.from(new Set(basePublicShareIds))
+      // Filter out Viewers from participants for calculation
+      const activeMembers = participants.filter((p) => p.role !== 'Viewer')
+      const defaultPublicShareIds = activeMembers.map((p) => p.id)
+      const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
+      // Filter out Viewers from public share participants
+      const publicShareParticipants = Array.from(new Set(basePublicShareIds)).filter((id) => {
+        const participant = participants.find((p) => p.id === id)
+        return participant && participant.role !== 'Viewer'
+      })
       const publicShareCount = publicShareParticipants.length
       if (publicShareCount === 0) {
         return { payer: null, debtors: [] }
@@ -2527,7 +2557,7 @@ export default function EditTransactionPage() {
         </div>
         ) : (
           <div className="w-full p-4 bg-gray-100 rounded-2xl text-center text-gray-500 font-medium relative z-10">
-            Viewer 模式：僅供檢視，無法修改
+            Viewer mode: only for viewing, cannot be modified
           </div>
         )}
       </div>
@@ -2652,6 +2682,7 @@ export default function EditTransactionPage() {
           selectedIds={publicShareParticipantIds}
           payerId={payerId}
           allowEmpty={true}
+          disableViewers={true} // Disable Viewer selection in shared with UI
         />
       )}
 

@@ -103,10 +103,6 @@ function AddTransactionPageContent() {
   // Derived values (computed after hooks)
   const currentUser = userFromHook || user;
   const participants = participantsData;
-  // Filter out Viewer role participants for expense calculations (but keep them for display)
-  const nonViewerParticipants = useMemo(() => {
-    return participants.filter(p => p.role !== 'Viewer')
-  }, [participants])
   const isMultiMemberLedger = participants.length > 1
   const expensePayerOptions = useMemo(() => {
     if (!isMultiMemberLedger) return participants
@@ -121,21 +117,6 @@ function AddTransactionPageContent() {
       if (payerId === DEPOSIT_PAYER_ID) setPayerId(currentUser?.id || '')
     }
   }, [isMultiMemberLedger, incomeMode, payerId, currentUser?.id])
-
-  // Enforce Viewer permissions: Viewer can only use Income (Top-up) mode
-  useEffect(() => {
-    if (isViewer && transactionType === "expense") {
-      setTransactionType("income")
-      // Clear expense-related state
-      setAmount("0")
-      setSelectedCategory(null)
-      setNote("")
-      setIsPublicExpense(false)
-      setSelectedParticipantIds([])
-      setPublicShareParticipantIds([])
-      setPayerId("")
-    }
-  }, [isViewer, transactionType])
 
   // ========== EFFECTS (AFTER ALL HOOKS) ==========
   // Check role from URL parameter - if Viewer, redirect to home and clear activeLedger
@@ -590,7 +571,7 @@ function AddTransactionPageContent() {
   // Update public amount when amount changes
   // - Default behavior (no custom split amounts): Total ÷ public share member count
   // - If shared expense is enabled AND user has entered any Split with custom amounts:
-  //   publicAmount defaults to (Total - sum(custom split amounts))
+  //   publicAmount defaults to (Total - sum(custom split amounts)) / (帐本人数 - viewer数)
   useEffect(() => {
     if (isPublicExpense && amount) {
       const totalAmount = parseFloat(amount) || 0;
@@ -598,10 +579,17 @@ function AddTransactionPageContent() {
         const totalInt = Math.ceil(totalAmount);
         // Only auto-update if user hasn't manually set it
         if (!publicAmountManuallySet) {
-          // Use public share participants count if set, otherwise use all participants
+          // Filter out Viewers from participants for calculation
+          const activeMembers = participants.filter((p) => p.role !== 'Viewer');
+          const activeMemberCount = Math.max(1, activeMembers.length || 1);
+          
+          // Use public share participants count if set, otherwise use all active members (excluding Viewers)
           const publicShareCount = publicShareParticipantIds.length > 0 
-            ? publicShareParticipantIds.length 
-            : participants.length;
+            ? publicShareParticipantIds.filter((id) => {
+                const participant = participants.find((p) => p.id === id);
+                return participant && participant.role !== 'Viewer';
+              }).length
+            : activeMemberCount;
           const memberCount = Math.max(1, publicShareCount || 1);
 
           const sumCustom = selectedParticipantIds.reduce((sum, id) => {
@@ -611,6 +599,7 @@ function AddTransactionPageContent() {
             return sum + Math.ceil(n);
           }, 0);
 
+          // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
           const calculatedPublicAmount =
             sumCustom > 0 ? Math.max(0, totalInt - sumCustom) : Math.ceil(totalInt / memberCount);
 
@@ -621,30 +610,23 @@ function AddTransactionPageContent() {
       setPublicAmount('');
       setPublicAmountManuallySet(false);
     }
-  }, [amount, isPublicExpense, publicAmountManuallySet, participants.length, publicShareParticipantIds.length, selectedParticipantIds, customSplitAmounts]);
+  }, [amount, isPublicExpense, publicAmountManuallySet, participants, publicShareParticipantIds.length, selectedParticipantIds, customSplitAmounts]);
 
   const getEffectiveSplitWithIds = useCallback((): string[] => {
-    if (selectedParticipantIds.length > 0) {
-      // Filter out Viewer role from selected participants
-      return selectedParticipantIds.filter(id => {
-        const participant = participants.find(p => p.id === id)
-        return participant && participant.role !== 'Viewer'
-      })
-    }
-    if (payerId === DEPOSIT_PAYER_ID) {
-      // Only include non-Viewer participants for deposit payer
-      return nonViewerParticipants.map((p) => p.id).filter(Boolean)
-    }
+    if (selectedParticipantIds.length > 0) return selectedParticipantIds;
+    if (payerId === DEPOSIT_PAYER_ID) return participants.map((p) => p.id).filter(Boolean)
     return payerId ? [payerId] : [];
-  }, [selectedParticipantIds, payerId, participants, nonViewerParticipants, DEPOSIT_PAYER_ID]);
+  }, [selectedParticipantIds, payerId, participants, DEPOSIT_PAYER_ID]);
 
-  const computeCustomSplits = useCallback((total: number, ids: string[], overrideAmounts?: Record<string, string>) => {
+  const computeCustomSplits = useCallback((total: number, ids: string[], overrideAmounts?: Record<string, string>, useFloor: boolean = false) => {
     const totalInt = Math.max(0, Math.ceil(Number(total) || 0));
     const normalizedIds = ids.filter(Boolean);
     const amountsMap = overrideAmounts ?? customSplitAmounts;
     const fixed: Record<string, number> = {};
     let fixedSum = 0;
     const remainingIds: string[] = [];
+
+    const roundFn = useFloor ? Math.floor : Math.ceil;
 
     for (const id of normalizedIds) {
       const v = amountsMap[id];
@@ -654,7 +636,7 @@ function AddTransactionPageContent() {
       }
       const n = Number(v);
       if (!isNaN(n) && n >= 0) {
-        const amt = Math.ceil(n);
+        const amt = roundFn(n);
         fixed[id] = amt;
         fixedSum += amt;
       } else {
@@ -670,11 +652,22 @@ function AddTransactionPageContent() {
     const autoCount = remainingIds.length;
     const autoAmounts: Record<string, number> = {};
     if (autoCount > 0) {
-      // Everyone rounds up to integer; any extra due to rounding belongs to payer.
-      const per = Math.ceil(remaining / autoCount);
-      for (let i = 0; i < remainingIds.length; i++) {
-        const id = remainingIds[i];
-        autoAmounts[id] = per;
+      if (useFloor) {
+        // For deposits: use Floor (向下取整) so each person's contribution is slightly less
+        const per = Math.floor(remaining / autoCount);
+        const remainder = remaining - (per * autoCount);
+        // Distribute remainder to first few participants
+        for (let i = 0; i < remainingIds.length; i++) {
+          const id = remainingIds[i];
+          autoAmounts[id] = per + (i < remainder ? 1 : 0);
+        }
+      } else {
+        // For expenses: use Ceiling (無條件進位) so each person pays slightly more
+        const per = Math.ceil(remaining / autoCount);
+        for (let i = 0; i < remainingIds.length; i++) {
+          const id = remainingIds[i];
+          autoAmounts[id] = per;
+        }
       }
     }
 
@@ -767,32 +760,32 @@ function AddTransactionPageContent() {
     const debtors: Debtor[] = [];
 
     if (isPublicExpense) {
-      // Public Fund Calculation: Only include non-Viewer members in denominator
-      const memberCount = Math.max(1, nonViewerParticipants.length || 1);
+      // Filter out Viewers from participants for calculation
+      const activeMembers = participants.filter((p) => p.role !== 'Viewer');
+      const activeMemberCount = Math.max(1, activeMembers.length || 1);
+      
       const rawPublicAmount =
-        publicAmount && parseFloat(publicAmount) > 0 ? parseFloat(publicAmount) : totalInt / memberCount;
+        publicAmount && parseFloat(publicAmount) > 0 ? parseFloat(publicAmount) : totalInt / activeMemberCount;
       const finalPublicAmount = Math.ceil(Math.max(0, Math.min(rawPublicAmount, totalInt)));
 
       const remainingAmount = totalInt - finalPublicAmount;
 
       // Public Share participants:
-      // - If none selected: ALL non-Viewer members share (includes payer if payer is a member)
-      // - If selected: ONLY selected non-Viewer participants share (do NOT force-include payer)
-      // Viewers MUST NOT be included in public fund calculation
-      const defaultPublicShareIds = nonViewerParticipants.map((p) => p.id);
-      // Filter out Viewer role from selected public share participants
-      const filteredPublicShareIds = publicShareParticipantIds.length > 0 
-        ? publicShareParticipantIds.filter(id => {
-            const participant = participants.find(p => p.id === id)
-            return participant && participant.role !== 'Viewer'
-          })
-        : []
-      const basePublicShareIds = filteredPublicShareIds.length > 0 ? filteredPublicShareIds : defaultPublicShareIds;
-      const publicShareParticipants = Array.from(new Set(basePublicShareIds));
+      // - If none selected: ALL active members (excluding Viewers) share
+      // - If selected: ONLY selected participants share (Viewers are filtered out in UI, but can be included if manually selected)
+      // Filter out Viewers from default list
+      const defaultPublicShareIds = activeMembers.map((p) => p.id);
+      const basePublicShareIds =
+        publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds;
+      // Filter out Viewers from public share participants
+      const publicShareParticipants = Array.from(new Set(basePublicShareIds)).filter((id) => {
+        const participant = participants.find((p) => p.id === id);
+        return participant && participant.role !== 'Viewer';
+      });
       const publicShareCount = publicShareParticipants.length;
       if (publicShareCount === 0) return null;
 
-      // Public share: everyone rounds up; extra belongs to payer (reduces payer's debt).
+      // Public share: everyone rounds up (Ceiling); extra belongs to payer (reduces payer's debt).
       const publicSharePerPerson = Math.ceil(finalPublicAmount / publicShareCount);
       
       // Calculate total public share after rounding up
@@ -890,20 +883,12 @@ function AddTransactionPageContent() {
       return;
     }
 
-    // RBAC: Final guard - prevent Viewer from saving Expense or Repayment transactions
-    // Viewer can ONLY create Top-up (Income) transactions
-    if (isViewer || role === 'Viewer') {
-      if (transactionType === "expense") {
-        handleError(null, "Viewers can only perform Top-ups. Cannot create Expense or Repayment.");
-        setSaving(false);
-        return;
-      }
-      // Check if trying to create Repayment (category "To receive from" is a repayment)
-      if (transactionType === "income" && selectedCategoryName === 'To receive from') {
-        handleError(null, "Viewers can only perform Top-ups. Cannot create Repayment.");
-        setSaving(false);
-        return;
-      }
+    // RBAC: Final guard - prevent Viewer from saving transactions (check URL parameter)
+    const roleFromUrl = searchParams.get('role') as 'Owner' | 'Member' | 'Viewer' | null;
+    if (roleFromUrl === 'Viewer') {
+      handleError(null, "Viewer 角色無法記帳");
+      router.replace('/');
+      return;
     }
 
     // Validation: Check amount
@@ -1073,7 +1058,8 @@ function AddTransactionPageContent() {
             return;
           }
 
-          const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts);
+          // For deposits: use Floor (向下取整) so each person's contribution is slightly less
+          const computed = computeCustomSplits(totalInt, depositParticipantIds, depositSplitAmounts, true);
           if (!computed.ok) {
             handleError(null, "split amount cannot exceed total amount");
             setSaving(false);
@@ -1081,14 +1067,9 @@ function AddTransactionPageContent() {
           }
           const splitSum = depositParticipantIds.reduce((sum, id) => sum + (computed.amounts[id] || 0), 0);
           
-          // 檢查分攤金額是否足夠（進位後可能會多一點，但不能少）
-          if (Math.ceil(splitSum) < totalInt) {
-            handleError(null, `split amount total (${Math.ceil(splitSum)}) is less than input total (${totalInt})`);
-            setSaving(false);
-            return;
-          }
-          
-          const incomeAmount = Math.ceil(splitSum);
+          // For deposits: Floor rounding may result in slightly less total, which is acceptable
+          // The manager/receiver will receive the actual total amount
+          const incomeAmount = totalInt; // Use the original total, not the rounded sum
 
           const transactionData: any = {
             payer_id: depositManagerId,
@@ -1102,7 +1083,7 @@ function AddTransactionPageContent() {
             split_with_amounts: (() => {
               const obj: Record<string, number> = {};
               depositParticipantIds.forEach((id) => {
-                obj[id] = Math.ceil(computed.amounts[id] || 0);
+                obj[id] = computed.amounts[id] || 0; // Already rounded with Floor
               });
               return obj;
             })(),
@@ -1133,7 +1114,7 @@ function AddTransactionPageContent() {
             const splitData: any = {
               transaction_id: transaction.id,
               user_id: id,
-              amount: Math.ceil(computed.amounts[id] || 0),
+              amount: computed.amounts[id] || 0, // Already rounded with Floor
             };
             if (activeLedger.type === 'ledger') splitData.ledger_id = activeLedger.id;
             else splitData.book_id = activeLedger.id;
@@ -1262,10 +1243,12 @@ function AddTransactionPageContent() {
       let splits: Array<{ user_id: string; amount: number }> = [];
 
       if (isPublicExpense) {
-        // Public amount: default = Total ÷ non-Viewer member count (can be manually changed)
-        // Viewers MUST NOT be included in the denominator
-        const memberCount = Math.max(1, nonViewerParticipants.length || 1);
-        const defaultPublicAmount = totalInt / memberCount;
+        // Filter out Viewers from participants for calculation
+        const activeMembers = participants.filter((p) => p.role !== 'Viewer');
+        const activeMemberCount = Math.max(1, activeMembers.length || 1);
+        
+        // Public amount: default = Total ÷ active member count (excluding Viewers) (can be manually changed)
+        const defaultPublicAmount = totalInt / activeMemberCount;
         const finalPublicAmount = publicAmount && parseFloat(publicAmount) > 0 
           ? parseFloat(publicAmount) 
           : defaultPublicAmount;
@@ -1286,18 +1269,16 @@ function AddTransactionPageContent() {
         const remainingAmount = totalInt - publicInt;
 
         // Public Share ($P): Split among public share participants
-        // Default: if none selected, ALL non-Viewer members share (even if not split-with/payer)
-        // If selected: ONLY selected non-Viewer participants share (do NOT force-include payer)
-        // Viewers MUST NOT be included in public fund calculation
-        const filteredPublicShareIds = publicShareParticipantIds.length > 0 
-          ? publicShareParticipantIds.filter(id => {
-              const participant = participants.find(p => p.id === id)
-              return participant && participant.role !== 'Viewer'
-            })
-          : []
+        // Default: if none selected, ALL active members (excluding Viewers) share
+        // If selected: ONLY selected participants share (Viewers are filtered out in UI)
+        const defaultPublicShareIds = activeMembers.map((p) => p.id);
         const basePublicShareIds =
-          filteredPublicShareIds.length > 0 ? filteredPublicShareIds : nonViewerParticipants.map((p) => p.id);
-        const publicShareParticipants = [...new Set(basePublicShareIds)];
+          publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds;
+        // Filter out Viewers from public share participants
+        const publicShareParticipants = [...new Set(basePublicShareIds)].filter((id) => {
+          const participant = participants.find((p) => p.id === id);
+          return participant && participant.role !== 'Viewer';
+        });
         const publicShareCount = publicShareParticipants.length;
         
         if (publicShareCount === 0) {
@@ -1306,7 +1287,7 @@ function AddTransactionPageContent() {
           return;
         }
         
-        // Public share: everyone rounds up; extra belongs to payer.
+        // Public share: everyone rounds up (Ceiling); extra belongs to payer.
         const publicSharePerPerson = Math.ceil(publicInt / publicShareCount);
         
         // Personal Share ($R): Split among Split with participants (empty => payer-only), allow custom amounts
@@ -1604,42 +1585,28 @@ function AddTransactionPageContent() {
             <X className="w-6 h-6 text-[#657486] dark:text-gray-400" />
           </button>
           <div className="w-full flex justify-center">
-            {isViewer ? (
-              // Viewer can only see Income (Top-up) tab
-              <div className="bg-white p-1 rounded-full border border-gray-100 flex relative w-64 shadow-sm">
-                <button
-                  onClick={() => setTransactionType("income")}
-                  className="flex-1 py-2 rounded-full text-sm font-bold bg-primary text-white shadow-sm"
-                  disabled
-                >
-                  Income
-                </button>
-              </div>
-            ) : (
-              // Owner/Member can see both Expense and Income tabs
-              <div className="bg-white p-1 rounded-full border border-gray-100 flex relative w-64 shadow-sm">
-                <button
-                  onClick={() => setTransactionType("expense")}
-                  className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${
-                    transactionType === "expense"
-                      ? "bg-primary text-white shadow-sm"
-                      : "text-text-muted hover:text-text-main"
-                  }`}
-                >
-                  Expense
-                </button>
-                <button
-                  onClick={() => setTransactionType("income")}
-                  className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${
-                    transactionType === "income"
-                      ? "bg-primary text-white shadow-sm"
-                      : "text-text-muted hover:text-text-main"
-                  }`}
-                >
-                  Income
-                </button>
-              </div>
-            )}
+            <div className="bg-white p-1 rounded-full border border-gray-100 flex relative w-64 shadow-sm">
+              <button
+                onClick={() => setTransactionType("expense")}
+                className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${
+                  transactionType === "expense"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text-main"
+                }`}
+              >
+                Expense
+              </button>
+              <button
+                onClick={() => setTransactionType("income")}
+                className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${
+                  transactionType === "income"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-text-muted hover:text-text-main"
+                }`}
+              >
+                Income
+              </button>
+            </div>
           </div>
           <div className="size-10"></div>
         </div>
@@ -1730,7 +1697,7 @@ function AddTransactionPageContent() {
         )}
 
         {/* More detailed breakdown for shared expense (keep spacing tidy, style aligned with /edit chips) */}
-        {transactionType === "expense" && splitSummary && isPublicExpense && splitSummary.debtors.length > 0 && payerId !== DEPOSIT_PAYER_ID && (
+        {transactionType === "expense" && splitSummary && splitSummary.debtors.length > 0 && (
           <div className="px-6 w-full mt-4 mb-6" onClick={(e) => e.stopPropagation()}>
             <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
               <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
@@ -1746,7 +1713,9 @@ function AddTransactionPageContent() {
                       {debtor.name}
                     </span>
                     <span className="text-[11px] text-text-muted whitespace-nowrap">
-                      Public Share {((debtor.publicShare || 0).toFixed(0))} + Personal {((debtor.personalShare || 0).toFixed(0))}
+                      {isPublicExpense && payerId !== DEPOSIT_PAYER_ID
+                        ? `Public Share ${((debtor.publicShare || 0).toFixed(0))} + Personal ${((debtor.personalShare || 0).toFixed(0))}`
+                        : `Amount: ${((debtor.amount || 0).toFixed(0))}`}
                     </span>
                   </div>
                 ))}
@@ -2185,26 +2154,12 @@ function AddTransactionPageContent() {
                 <p className="text-xs text-text-muted mt-2">
                   Default: ${(() => {
                     const total = parseFloat(amount) || 0
-                    const filteredPublicShareIds = publicShareParticipantIds.length > 0 
-                      ? publicShareParticipantIds.filter(id => {
-                          const participant = participants.find(p => p.id === id)
-                          return participant && participant.role !== 'Viewer'
-                        })
-                      : []
-                    const publicShareCount = filteredPublicShareIds.length > 0 
-                      ? filteredPublicShareIds.length 
-                      : nonViewerParticipants.length;
+                    const publicShareCount = publicShareParticipantIds.length > 0 
+                      ? publicShareParticipantIds.length 
+                      : participants.length;
                     const memberCount = Math.max(1, publicShareCount || 1)
                     return Math.ceil(total / memberCount).toFixed(0)
-                  })()} (Total ÷ {(() => {
-                    const filteredPublicShareIds = publicShareParticipantIds.length > 0 
-                      ? publicShareParticipantIds.filter(id => {
-                          const participant = participants.find(p => p.id === id)
-                          return participant && participant.role !== 'Viewer'
-                        })
-                      : []
-                    return filteredPublicShareIds.length > 0 ? filteredPublicShareIds.length : nonViewerParticipants.length
-                  })()})
+                  })()} (Total ÷ {publicShareParticipantIds.length > 0 ? publicShareParticipantIds.length : participants.length})
                 </p>
                 <div className="mt-4">
                   <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">
@@ -2414,7 +2369,7 @@ function AddTransactionPageContent() {
         >
           <button
             onClick={handleSave}
-            disabled={!canSave() || saving}
+            disabled={!canSave() || saving || isViewer}
             className={`w-full py-4 rounded-2xl font-bold text-white transition-all active:scale-95 ${
               canSave() && !saving
                 ? "bg-primary hover:bg-primary-dark"
@@ -2455,26 +2410,20 @@ function AddTransactionPageContent() {
         isOpen={showParticipantsModal}
         onClose={() => setShowParticipantsModal(false)}
         onConfirm={(ids) => {
-          // Filter out Viewer role participants from selected IDs
-          const filteredIds = ids.filter(id => {
-            const participant = participants.find(p => p.id === id)
-            return participant && participant.role !== 'Viewer'
-          })
-          
           if (participantsModalMode === 'deposit') {
-            setDepositParticipantIds(filteredIds);
+            setDepositParticipantIds(ids);
             setDepositSplitAmounts((prev) => {
               const next: Record<string, string> = {};
-              filteredIds.forEach((id) => {
+              ids.forEach((id) => {
                 if (prev[id] !== undefined) next[id] = prev[id];
               });
               return next;
             });
           } else {
-            setSelectedParticipantIds(filteredIds);
+            setSelectedParticipantIds(ids);
             setCustomSplitAmounts((prev) => {
               const next: Record<string, string> = {};
-              filteredIds.forEach((id) => {
+              ids.forEach((id) => {
                 if (prev[id] !== undefined) next[id] = prev[id];
               });
               return next;
@@ -2544,18 +2493,14 @@ function AddTransactionPageContent() {
           isOpen={showPublicShareModal}
           onClose={() => setShowPublicShareModal(false)}
           onConfirm={(ids) => {
-            // Filter out Viewer role participants - Viewers MUST NOT be included in public fund calculation
-            const filteredIds = ids.filter(id => {
-              const participant = participants.find(p => p.id === id)
-              return participant && participant.role !== 'Viewer'
-            })
-            setPublicShareParticipantIds(filteredIds);
+            setPublicShareParticipantIds(ids);
             setShowPublicShareModal(false);
           }}
           participants={participants}
           selectedIds={publicShareParticipantIds}
           payerId={payerId}
           allowEmpty={true}
+          disableViewers={true} // Disable Viewer selection in shared with UI
         />
       )}
       </div>

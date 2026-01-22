@@ -8,6 +8,7 @@ interface Participant {
   name: string;
   avatar?: string;
   isPayer?: boolean;
+  role?: 'Owner' | 'Member' | 'Viewer';
 }
 
 interface SelectParticipantsProps {
@@ -19,6 +20,7 @@ interface SelectParticipantsProps {
   payerId?: string | null;
   allowEmpty?: boolean; // Allow confirming with no selection
   single?: boolean;
+  disableViewers?: boolean; // Disable Viewer selection (for shared with UI)
 }
 
 export default function SelectParticipants({
@@ -30,6 +32,7 @@ export default function SelectParticipants({
   payerId,
   allowEmpty = false,
   single = false,
+  disableViewers = false, // Default: allow Viewer selection
 }: SelectParticipantsProps) {
   const [localSelected, setLocalSelected] = React.useState<string[]>(selectedIds);
 
@@ -142,42 +145,76 @@ export default function SelectParticipants({
                 .filter((p) => p.id !== payerId && (p.id !== '__DEPOSIT__' || single))
                 .map((participant) => {
                   const isSelected = localSelected.includes(participant.id);
+                  const isViewer = participant.role === 'Viewer';
+                  const isDisabled = disableViewers && isViewer; // Only disable if disableViewers is true
                   return (
                     <label
                       key={participant.id}
-                      className="group flex items-center p-3 bg-white rounded-2xl border border-gray-100 cursor-pointer transition-all hover:border-primary/30 hover:shadow-soft"
+                      className={`group flex items-center p-3 rounded-2xl border transition-all ${
+                        isDisabled
+                          ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60'
+                          : 'bg-white border-gray-100 cursor-pointer hover:border-primary/30 hover:shadow-soft'
+                      }`}
                     >
                       <div className="shrink-0">
                         {participant.avatar ? (
                           <img
                             alt={participant.name}
-                            className="size-12 rounded-full object-cover border border-gray-100"
+                            className={`size-12 rounded-full object-cover border ${
+                              isDisabled ? 'border-gray-200 grayscale' : 'border-gray-100'
+                            }`}
                             src={participant.avatar}
                           />
                         ) : participant.name === "Coco" ? (
-                          <div className="size-12 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-500 font-bold text-lg border border-yellow-100">
+                          <div className={`size-12 rounded-full flex items-center justify-center font-bold text-lg border ${
+                            isDisabled
+                              ? 'bg-gray-100 text-gray-400 border-gray-200'
+                              : 'bg-yellow-50 text-yellow-500 border-yellow-100'
+                          }`}>
                             C
                           </div>
                         ) : participant.id === "__DEPOSIT__" ? (
-                          <div className="size-12 rounded-full bg-blue-50 flex items-center justify-center text-primary font-bold text-lg border border-blue-100">
+                          <div className={`size-12 rounded-full flex items-center justify-center font-bold text-lg border ${
+                            isDisabled
+                              ? 'bg-gray-100 text-gray-400 border-gray-200'
+                              : 'bg-blue-50 text-primary border-blue-100'
+                          }`}>
                             <span className="material-symbols-outlined">account_balance_wallet</span>
                           </div>
                         ) : (
-                          <div className="size-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-bold border border-gray-100">
+                          <div className={`size-12 rounded-full flex items-center justify-center font-bold border ${
+                            isDisabled
+                              ? 'bg-gray-100 text-gray-400 border-gray-200'
+                              : 'bg-gray-200 text-gray-600 border-gray-100'
+                          }`}>
                             {participant.name[0]}
                           </div>
                         )}
                       </div>
                       <div className="ml-4 flex-1">
-                        <div className="font-bold text-gray-900 group-hover:text-primary transition-colors">
+                        <div className={`font-bold transition-colors ${
+                          isDisabled
+                            ? 'text-gray-400'
+                            : 'text-gray-900 group-hover:text-primary'
+                        }`}>
                           {participant.name}
                         </div>
+                        {isViewer && (
+                          <div className="text-xs text-gray-400 mt-0.5">Viewer</div>
+                        )}
                       </div>
                       <div className="relative flex items-center justify-center size-7 shrink-0">
                         <input
                           checked={isSelected}
-                          onChange={() => handleToggle(participant.id)}
-                          className="peer appearance-none size-6 border-2 border-gray-300 rounded-full checked:bg-primary checked:border-primary transition-all bg-white"
+                          onChange={() => !isDisabled && handleToggle(participant.id)}
+                          disabled={isDisabled}
+                          className={`peer appearance-none size-6 border-2 rounded-full transition-all ${
+                            isDisabled
+                              ? 'border-gray-200 bg-gray-100 cursor-not-allowed'
+                              : isSelected
+                              ? 'border-primary bg-primary'
+                              : 'border-gray-300 bg-white'
+                          }`}
                           type="checkbox"
                         />
                         <span className="material-symbols-outlined absolute text-white opacity-0 peer-checked:opacity-100 text-sm pointer-events-none font-bold">
