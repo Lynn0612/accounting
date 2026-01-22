@@ -103,43 +103,74 @@ export default function SelectParticipants({
               <h3 className="px-2 text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
                 Payer
               </h3>
-              <label className="group flex items-center p-3 bg-blue-50/50 rounded-2xl border-2 border-primary/20 cursor-pointer transition-all hover:bg-blue-50">
-                <div className="relative shrink-0">
-                  {payer.avatar ? (
-                    <img
-                      alt="Payer"
-                      className="size-12 rounded-full object-cover border-2 border-white shadow-sm"
-                      src={payer.avatar}
-                    />
-                  ) : payer.id === "__DEPOSIT__" ? (
-                    <div className="size-12 rounded-full bg-primary flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
-                      <span className="material-symbols-outlined">account_balance_wallet</span>
+              {(() => {
+                const isPayerViewer = payer.role === 'Viewer';
+                const isPayerDisabled = disableViewers && isPayerViewer;
+                return (
+                  <label className={`group flex items-center p-3 rounded-2xl border transition-all ${
+                    isPayerDisabled
+                      ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60'
+                      : 'bg-blue-50/50 border-2 border-primary/20 cursor-pointer hover:bg-blue-50'
+                  }`}>
+                    <div className="relative shrink-0">
+                      {payer.avatar ? (
+                        <img
+                          alt="Payer"
+                          className={`size-12 rounded-full object-cover border-2 border-white shadow-sm ${
+                            isPayerDisabled ? 'grayscale' : ''
+                          }`}
+                          src={payer.avatar}
+                        />
+                      ) : payer.id === "__DEPOSIT__" ? (
+                        <div className={`size-12 rounded-full bg-primary flex items-center justify-center text-white font-bold border-2 border-white shadow-sm ${
+                          isPayerDisabled ? 'opacity-60' : ''
+                        }`}>
+                          <span className="material-symbols-outlined">account_balance_wallet</span>
+                        </div>
+                      ) : (
+                        <div className={`size-12 rounded-full bg-primary flex items-center justify-center text-white font-bold border-2 border-white shadow-sm ${
+                          isPayerDisabled ? 'opacity-60' : ''
+                        }`}>
+                          {payer.name[0]}
+                        </div>
+                      )}
+                      <div className="absolute -bottom-1 -right-1 bg-primary text-white rounded-full p-0.5 border-2 border-white">
+                        <Star className="w-3 h-3 fill-white" />
+                      </div>
                     </div>
-                  ) : (
-                    <div className="size-12 rounded-full bg-primary flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
-                      {payer.name[0]}
+                    <div className="ml-4 flex-1">
+                      <div className={`font-bold transition-colors ${
+                        isPayerDisabled
+                          ? 'text-gray-400'
+                          : 'text-gray-900 group-hover:text-primary'
+                      }`}>
+                        {payer.name}
+                      </div>
+                      <div className={`text-xs font-medium ${
+                        isPayerDisabled ? 'text-gray-400' : 'text-primary'
+                      }`}>
+                        {isPayerViewer ? 'Payer (Viewer)' : 'Payer'}
+                      </div>
                     </div>
-                  )}
-                  <div className="absolute -bottom-1 -right-1 bg-primary text-white rounded-full p-0.5 border-2 border-white">
-                    <Star className="w-3 h-3 fill-white" />
-                  </div>
-                </div>
-                <div className="ml-4 flex-1">
-                  <div className="font-bold text-gray-900 group-hover:text-primary transition-colors">
-                    {payer.name}
-                  </div>
-                  <div className="text-xs text-primary font-medium">Payer</div>
-                </div>
-                <div className="relative flex items-center justify-center size-7 shrink-0">
-                  <input
-                    checked={payerId ? localSelected.includes(payerId) : false}
-                    onChange={() => payerId && handleToggle(payerId)}
-                    className="peer appearance-none size-6 border-2 border-gray-300 rounded-full checked:bg-primary checked:border-primary transition-all bg-white"
-                    type="checkbox"
-                  />
-                  <Check className="absolute text-white opacity-0 peer-checked:opacity-100 w-3 h-3 pointer-events-none" />
-                </div>
-              </label>
+                    <div className="relative flex items-center justify-center size-7 shrink-0">
+                      <input
+                        checked={payerId ? localSelected.includes(payerId) : false}
+                        onChange={() => !isPayerDisabled && payerId && handleToggle(payerId)}
+                        disabled={isPayerDisabled}
+                        className={`peer appearance-none size-6 border-2 rounded-full transition-all ${
+                          isPayerDisabled
+                            ? 'border-gray-200 bg-gray-100 cursor-not-allowed'
+                            : localSelected.includes(payerId || '')
+                            ? 'border-primary bg-primary'
+                            : 'border-gray-300 bg-white'
+                        }`}
+                        type="checkbox"
+                      />
+                      <Check className="absolute text-white opacity-0 peer-checked:opacity-100 w-3 h-3 pointer-events-none" />
+                    </div>
+                  </label>
+                );
+              })()}
             </div>
           )}
 
