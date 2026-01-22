@@ -74,7 +74,7 @@ export default function StatisticsPage() {
       const scopeColumn = activeLedger.type === 'account_book' ? 'book_id' : 'ledger_id'
       
       // 查詢所有儲值金收入交易及其分攤
-      const { data: depositTransactions, error } = await supabase
+      const { data: depositIncomeTransactions, error: incomeError } = await supabase
         .from('transactions')
         .select(`
           id,
@@ -89,16 +89,39 @@ export default function StatisticsPage() {
         .eq('type', 'income')
         .eq('income_mode', 'deposit')
       
-      if (error) {
-        console.error('Error loading deposit details:', error)
+      if (incomeError) {
+        console.error('Error loading deposit income:', incomeError)
         setLoadingDepositDetails(false)
         return
       }
       
-      // 計算每個成員的儲值金總額
+      // 查詢所有儲值金支出交易及其分攤（payer 為 deposit 的 expense）
+      const { data: depositExpenseTransactions, error: expenseError } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          amount,
+          payer_id,
+          transaction_splits (
+            user_id,
+            amount
+          )
+        `)
+        .eq(scopeColumn, activeLedger.id)
+        .eq('type', 'expense')
+        .eq('expense_payment_source', 'deposit')
+      
+      if (expenseError) {
+        console.error('Error loading deposit expenses:', expenseError)
+        setLoadingDepositDetails(false)
+        return
+      }
+      
+      // 計算每個成員的儲值金淨額（收入 - 支出）
       const memberAmounts: Record<string, number> = {}
       
-      depositTransactions?.forEach((tx: any) => {
+      // 加上儲值金收入
+      depositIncomeTransactions?.forEach((tx: any) => {
         // 從 transaction_splits 取得每個成員的分攤金額
         if (tx.transaction_splits && tx.transaction_splits.length > 0) {
           tx.transaction_splits.forEach((split: any) => {
@@ -109,7 +132,19 @@ export default function StatisticsPage() {
         }
       })
       
-      // 將結果與 participants 對應
+      // 減去儲值金支出
+      depositExpenseTransactions?.forEach((tx: any) => {
+        // 從 transaction_splits 取得每個成員的分攤金額（這是他們從儲值金中支出的部分）
+        if (tx.transaction_splits && tx.transaction_splits.length > 0) {
+          tx.transaction_splits.forEach((split: any) => {
+            if (split.user_id) {
+              memberAmounts[split.user_id] = (memberAmounts[split.user_id] || 0) - Number(split.amount || 0)
+            }
+          })
+        }
+      })
+      
+      // 將結果與 participants 對應（包括負數和零）
       const result = participants
         .map(p => ({
           id: p.id,
@@ -117,8 +152,8 @@ export default function StatisticsPage() {
           avatar: p.avatar,
           amount: memberAmounts[p.id] || 0
         }))
-        .filter(p => p.amount > 0)
-        .sort((a, b) => b.amount - a.amount)
+        .filter(p => p.amount !== 0) // 只顯示有變動的成員（包括負數）
+        .sort((a, b) => b.amount - a.amount) // 按金額排序（正數在前，負數在後）
       
       setDepositByMember(result)
     } catch (err) {
@@ -823,7 +858,9 @@ export default function StatisticsPage() {
                       </div>
                       <span className="font-semibold text-text-main">{member.name}</span>
                     </div>
-                    <span className="font-bold text-primary">{formatAmountSimple(member.amount)}</span>
+                    <span className={`font-bold ${member.amount < 0 ? 'text-red-500' : 'text-primary'}`}>
+                      {formatAmountSimple(member.amount)}
+                    </span>
                   </div>
                 ))}
                 

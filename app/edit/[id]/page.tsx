@@ -1160,12 +1160,13 @@ export default function EditTransactionPage() {
 
             // Public Share participants:
             // - If none selected: ALL active members (excluding Viewers) share
-            // - If selected: ONLY selected participants share (Viewers are filtered out in UI)
+            // - If selected: ONLY selected participants share (Viewers are filtered out in UI and cannot be selected)
+            // IMPORTANT: Viewer is NOT allowed in public share calculation, even if they are in payer or split_with
             // Filter out Viewers from participants for calculation
             const activeMembers = participants.filter((p) => p.role !== 'Viewer')
             const defaultPublicShareIds = activeMembers.map((p) => p.id)
             const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
-            // Filter out Viewers from public share participants
+            // Filter out Viewers from public share participants (Viewer cannot participate in public share)
             const publicShareParticipants = Array.from(new Set(basePublicShareIds)).filter((id) => {
               const participant = participants.find((p) => p.id === id)
               return participant && participant.role !== 'Viewer'
@@ -1383,10 +1384,11 @@ export default function EditTransactionPage() {
       const remainingAmount = totalInt - finalPublicAmount
 
       // Filter out Viewers from participants for calculation
+      // IMPORTANT: Viewer is NOT allowed in public share calculation, even if they are in payer or split_with
       const activeMembers = participants.filter((p) => p.role !== 'Viewer')
       const defaultPublicShareIds = activeMembers.map((p) => p.id)
       const basePublicShareIds = publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds
-      // Filter out Viewers from public share participants
+      // Filter out Viewers from public share participants (Viewer cannot participate in public share)
       const publicShareParticipants = Array.from(new Set(basePublicShareIds)).filter((id) => {
         const participant = participants.find((p) => p.id === id)
         return participant && participant.role !== 'Viewer'

@@ -772,12 +772,13 @@ function AddTransactionPageContent() {
 
       // Public Share participants:
       // - If none selected: ALL active members (excluding Viewers) share
-      // - If selected: ONLY selected participants share (Viewers are filtered out in UI, but can be included if manually selected)
+      // - If selected: ONLY selected participants share (Viewers are filtered out in UI and cannot be selected)
+      // IMPORTANT: Viewer is NOT allowed in public share calculation, even if they are in payer or split_with
       // Filter out Viewers from default list
       const defaultPublicShareIds = activeMembers.map((p) => p.id);
       const basePublicShareIds =
         publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds;
-      // Filter out Viewers from public share participants
+      // Filter out Viewers from public share participants (Viewer cannot participate in public share)
       const publicShareParticipants = Array.from(new Set(basePublicShareIds)).filter((id) => {
         const participant = participants.find((p) => p.id === id);
         return participant && participant.role !== 'Viewer';
@@ -794,10 +795,13 @@ function AddTransactionPageContent() {
       const publicShareExcess = totalPublicShareRounded - finalPublicAmount;
 
       // Personal Share: Split among Split with participants (empty => payer-only)
+      // Note: Viewer can be in split_with, but they won't be in public share
       const personalShareParticipants = effectiveSplitWithIds.length > 0 ? effectiveSplitWithIds : payerId ? [payerId] : [];
       const personalShares = computeCustomSplits(remainingAmount, personalShareParticipants);
       if (!personalShares.ok) return null;
 
+      // All debtor IDs: combine split_with and public share, but exclude payer
+      // Note: Viewer can be in split_with, but they won't be in public share participants
       const allDebtorIds = Array.from(new Set([...effectiveSplitWithIds, ...basePublicShareIds])).filter(
         (id) => id !== payerId
       );
@@ -1270,11 +1274,12 @@ function AddTransactionPageContent() {
 
         // Public Share ($P): Split among public share participants
         // Default: if none selected, ALL active members (excluding Viewers) share
-        // If selected: ONLY selected participants share (Viewers are filtered out in UI)
+        // If selected: ONLY selected participants share (Viewers are filtered out in UI and cannot be selected)
+        // IMPORTANT: Viewer is NOT allowed in public share calculation, even if they are in payer or split_with
         const defaultPublicShareIds = activeMembers.map((p) => p.id);
         const basePublicShareIds =
           publicShareParticipantIds.length > 0 ? publicShareParticipantIds : defaultPublicShareIds;
-        // Filter out Viewers from public share participants
+        // Filter out Viewers from public share participants (Viewer cannot participate in public share)
         const publicShareParticipants = [...new Set(basePublicShareIds)].filter((id) => {
           const participant = participants.find((p) => p.id === id);
           return participant && participant.role !== 'Viewer';
