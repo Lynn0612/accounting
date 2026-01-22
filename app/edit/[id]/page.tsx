@@ -2355,7 +2355,32 @@ export default function EditTransactionPage() {
                     ref={editingAmountType === 'publicAmount' ? editingInputRef : null}
                     type="text"
                     inputMode="decimal"
-                    value={publicAmount}
+                    value={(() => {
+                      // If user hasn't manually set, show calculated value (which updates when split amounts change)
+                      if (!publicAmountManuallySet) {
+                        const total = parseFloat(amount) || 0
+                        const totalInt = Math.ceil(total)
+                        const activeMembers = participants.filter((p) => p.role !== 'Viewer')
+                        const activeMemberCount = Math.max(1, activeMembers.length || 1)
+                        
+                        // Calculate sum of custom split amounts (from split_with)
+                        const sumCustom = selectedParticipantIds.reduce((sum, id) => {
+                          const v = customSplitAmounts[id]
+                          const n = Number(v)
+                          if (v === undefined || v === '' || isNaN(n) || n <= 0) return sum
+                          return sum + Math.ceil(n)
+                        }, 0)
+                        
+                        // shared expense amount = (总金额 - split amounts) / (帐本人数 - viewer数)
+                        const calculatedPublicAmount = sumCustom > 0 
+                          ? Math.max(0, totalInt - sumCustom) 
+                          : Math.ceil(totalInt / activeMemberCount)
+                        
+                        return calculatedPublicAmount.toString()
+                      }
+                      // If user manually set, show their value
+                      return publicAmount
+                    })()}
                     onChange={(e) => {
                       const next = e.target.value
                       const total = Math.ceil(parseFloat(amount) || 0)
