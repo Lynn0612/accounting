@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo, memo, useCallback } from "react";
+import { useState, useMemo, memo, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { startOfMonth, endOfMonth } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLedger } from "@/contexts/LedgerContext";
 import { useUser } from "@/hooks/useUser";
 import { useProfiles } from "@/hooks/useProfiles";
@@ -38,6 +39,7 @@ const HomePageClient = memo(function HomePageClient({
 }: HomePageClientProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { activeLedger } = useLedger();
   const { data: user } = useUser();
   const { data: profileMap } = useProfiles(user?.id ? [user.id] : []);
@@ -52,12 +54,17 @@ const HomePageClient = memo(function HomePageClient({
   );
 
   // Get current month date range for total income/expenses - recalculate on every render to ensure current month
-  // Don't memoize to ensure we always get the current month, not a stale cached value
+  // Use useMemo with month key to detect month changes
   const now = new Date();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-  const startOfMonthStr = monthStart.toISOString().split('T')[0];
-  const endOfMonthStr = monthEnd.toISOString();
+  const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+  const { startOfMonthStr, endOfMonthStr } = useMemo(() => {
+    const monthStart = startOfMonth(now);
+    const monthEnd = endOfMonth(now);
+    return {
+      startOfMonthStr: monthStart.toISOString().split('T')[0],
+      endOfMonthStr: monthEnd.toISOString(),
+    };
+  }, [currentMonthKey]); // Recalculate when month changes
   
   // Debug: Log current month range (only in development)
   if (process.env.NODE_ENV === 'development') {
@@ -65,7 +72,7 @@ const HomePageClient = memo(function HomePageClient({
   }
 
   // Recent transactions: filter to current month to prioritize "New Month" focus
-  const { data: realTimeTransactions } = useTransactions({
+  const { data: realTimeTransactions, refetch: refetchRecent } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -76,6 +83,13 @@ const HomePageClient = memo(function HomePageClient({
   }, {
     enabled: !!activeLedger?.id
   });
+  
+  // Force refetch when month changes
+  useEffect(() => {
+    if (activeLedger?.id) {
+      refetchRecent();
+    }
+  }, [startOfMonthStr, activeLedger?.id, refetchRecent]);
 
   const { data: settlements = [] } = useSettlements({
     ledgerId: activeLedger?.id || null,
@@ -157,9 +171,9 @@ const HomePageClient = memo(function HomePageClient({
     });
 
     return sorted.slice(0, 5);
-  }, [realTimeTransactions, initialTransactions, settlements, user?.id, participants]);
+  }, [realTimeTransactions, settlements, user?.id, participants]);
 
-  const { data: monthlyTransactions } = useTransactions({
+  const { data: monthlyTransactions, refetch: refetchMonthly } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -168,10 +182,17 @@ const HomePageClient = memo(function HomePageClient({
   }, {
     enabled: !!activeLedger?.id && !!user?.id
   });
+  
+  // Force refetch when month changes
+  useEffect(() => {
+    if (activeLedger?.id && user?.id) {
+      refetchMonthly();
+    }
+  }, [startOfMonthStr, activeLedger?.id, user?.id, refetchMonthly]);
 
   // Query all shared expenses (公費總支出) for the current month
   // Note: We don't use userId filter here because shared expenses are ledger-wide
-  const { data: allMonthlyTransactions, isLoading: isLoadingShared } = useTransactions({
+  const { data: allMonthlyTransactions, isLoading: isLoadingShared, refetch: refetchShared } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -179,15 +200,24 @@ const HomePageClient = memo(function HomePageClient({
     type: 'expense',
     includeCategory: true,
   }, {
-    enabled: !!activeLedger?.id
+    enabled: !!activeLedger?.id,
+    // Don't use initialData to avoid showing stale server-side data
   });
+  
+  // Force refetch when month changes
+  useEffect(() => {
+    if (activeLedger?.id) {
+      refetchShared();
+    }
+  }, [startOfMonthStr, activeLedger?.id, refetchShared]);
   
   // Debug: Log shared expenses count (only in development)
   if (process.env.NODE_ENV === 'development') {
     console.log('Monthly shared expenses:', { 
       count: allMonthlyTransactions?.length || 0, 
       isLoading: isLoadingShared,
-      dateRange: { start: startOfMonthStr, end: endOfMonthStr }
+      dateRange: { start: startOfMonthStr, end: endOfMonthStr },
+      transactions: allMonthlyTransactions?.slice(0, 3).map((t: any) => ({ id: t.id, date: t.date, amount: t.amount, public_amount: t.public_amount }))
     });
   }
 
