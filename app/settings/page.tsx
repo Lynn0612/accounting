@@ -2264,7 +2264,7 @@ export default function SettingsPage() {
             setLineNotifications(false);
           }}></div>
           <div className="relative flex h-full min-h-screen w-full flex-col max-w-md mx-auto bg-background-light overflow-x-hidden shadow-2xl">
-            <header className="sticky top-0 z-20 flex items-center justify-between px-4 py-4 bg-background-light/95 backdrop-blur-sm">
+            <header className="sticky top-0 z-20 flex items-center justify-between px-6 pt-8 pb-2 bg-background-light/95 backdrop-blur-sm">
               <button
                 onClick={() => {
                   setShowCreateModal(false);
@@ -2272,7 +2272,7 @@ export default function SettingsPage() {
                   setBookDescription("");
                   setLineNotifications(false);
                 }}
-                className="group flex size-10 shrink-0 items-center justify-center rounded-full bg-white shadow-sm active:scale-95 transition-all"
+                className="group flex size-10 shrink-0 items-center justify-center rounded-full bg-white shadow-sm hover:shadow-md transition-all active:scale-95"
               >
                 <span className="material-symbols-outlined text-gray-600 group-hover:text-primary transition-colors" style={{ fontSize: "24px" }}>close</span>
               </button>
