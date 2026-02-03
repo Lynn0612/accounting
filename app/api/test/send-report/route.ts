@@ -46,12 +46,7 @@ function getMonthRange(monthParam: string) {
 }
 
 // Helper function to send LINE message
-async function sendLineMessage(lineUserId: string, text: string) {
-  const lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  
-  if (!lineToken) {
-    throw new Error('LINE_CHANNEL_ACCESS_TOKEN is not configured');
-  }
+async function sendLineMessage(lineUserId: string, text: string, lineToken: string) {
   
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
@@ -184,12 +179,42 @@ export async function GET(request: NextRequest) {
     const { year, month: monthNum, startDateStr, endDateStr, endDateNextDayStr, taipeiStart, taipeiEnd } = getMonthRange(month);
     
     // Initialize Supabase client
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Try multiple possible environment variable names
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+    const lineToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
     
     if (!supabaseUrl || !supabaseServiceKey) {
       return NextResponse.json(
-        { error: "Missing Supabase configuration" },
+        { 
+          error: "Missing Supabase configuration",
+          details: {
+            hasSupabaseUrl: !!supabaseUrl,
+            hasSupabaseServiceKey: !!supabaseServiceKey,
+            hasLineToken: !!lineToken,
+            envVars: {
+              NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+              SUPABASE_URL: !!process.env.SUPABASE_URL,
+              SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+              NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
+              LINE_CHANNEL_ACCESS_TOKEN: !!process.env.LINE_CHANNEL_ACCESS_TOKEN
+            }
+          }
+        },
+        { status: 500 }
+      );
+    }
+    
+    if (!lineToken) {
+      return NextResponse.json(
+        { 
+          error: "Missing LINE_CHANNEL_ACCESS_TOKEN",
+          details: {
+            hasSupabaseUrl: !!supabaseUrl,
+            hasSupabaseServiceKey: !!supabaseServiceKey,
+            hasLineToken: false
+          }
+        },
         { status: 500 }
       );
     }
@@ -327,7 +352,7 @@ export async function GET(request: NextRequest) {
         message += ledgerSummaries.join('\n\n');
         
         // Send LINE message
-        await sendLineMessage(profile.line_user_id, message);
+        await sendLineMessage(profile.line_user_id, message, lineToken);
         
         results.push({
           userId,
