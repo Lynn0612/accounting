@@ -30,7 +30,7 @@ interface SettlementDetailReceived {
 }
 
 serve(async (req) => {
-  try {
+  try { 
     const now = new Date();
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
