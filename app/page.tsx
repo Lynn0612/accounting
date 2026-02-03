@@ -50,17 +50,42 @@ async function getDashboardData() {
     redirect("/login");
   }
 
-  // Get first ledger user is member of and fetch transactions in one query using join
-  // Note: We don't fetch all ledgers here because useLedgers hook in HomePageClient handles that
-  // Fetching all ledgers without proper filtering causes 406 errors due to RLS policies
-  const { data: ledgerMembership } = await supabase
-    .from('ledger_members')
-    .select('ledger_id')
-    .eq('user_id', userId)
-    .limit(1)
-    .single();
+  // Get first ledger or account_book user is member of
+  // Check both ledger_members and book_members to support both types
+  const [ledgerMembershipResult, bookMembershipResult] = await Promise.all([
+    supabase
+      .from('ledger_members')
+      .select('ledger_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('book_members')
+      .select('book_id')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  if (!ledgerMembership) {
+  const ledgerMembership = ledgerMembershipResult.data;
+  const bookMembership = bookMembershipResult.data;
+  
+  // Determine which type of ledger we're using
+  let activeLedgerId: string | null = null;
+  let ledgerType: 'ledger' | 'account_book' = 'ledger';
+  let scopeColumn: 'ledger_id' | 'book_id' = 'ledger_id';
+
+  if (ledgerMembership) {
+    activeLedgerId = ledgerMembership.ledger_id;
+    ledgerType = 'ledger';
+    scopeColumn = 'ledger_id';
+  } else if (bookMembership) {
+    activeLedgerId = bookMembership.book_id;
+    ledgerType = 'account_book';
+    scopeColumn = 'book_id';
+  }
+
+  if (!activeLedgerId) {
     return {
       totalIncome: 0,
       totalExpenses: 0,
@@ -70,14 +95,13 @@ async function getDashboardData() {
     };
   }
 
-  const activeLedgerId = ledgerMembership.ledger_id;
-
   // Calculate current month date range using date-fns
+  // IMPORTANT: Use only date part (YYYY-MM-DD) for database DATE field comparison
   const now = new Date();
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
-  const startDateStr = monthStart.toISOString().split('T')[0];
-  const endDateStr = monthEnd.toISOString();
+  const startDateStr = monthStart.toISOString().split('T')[0]; // YYYY-MM-DD
+  const endDateStr = monthEnd.toISOString().split('T')[0]; // YYYY-MM-DD (not including time)
 
   // Optimized: Fetch all data in parallel with joins
   // Note: We still fetch recentTransactions on server for initial render,
@@ -94,7 +118,7 @@ async function getDashboardData() {
           ${inner}
         )
       `)
-      .eq("ledger_id", activeLedgerId)
+      .eq(scopeColumn, activeLedgerId)
       .eq("user_id", userId)
       .gte("transactions.date", startDateStr)
       .lte("transactions.date", endDateStr);
@@ -112,7 +136,7 @@ async function getDashboardData() {
           ${inner}
         )
       `)
-      .eq("ledger_id", activeLedgerId)
+      .eq(scopeColumn, activeLedgerId)
       .eq("user_id", userId);
   };
 
@@ -143,7 +167,7 @@ async function getDashboardData() {
           full_name
         )
       `)
-      .eq("ledger_id", activeLedgerId)
+      .eq(ledgerType === 'account_book' ? 'book_id' : 'ledger_id', activeLedgerId)
       .gte("date", startDateStr)
       .lte("date", endDateStr)
       .order("date", { ascending: false })

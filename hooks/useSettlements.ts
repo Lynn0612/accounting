@@ -39,12 +39,16 @@ const getSettlements = async ({
     .select('id, sender_id, receiver_id, amount, created_at, date, note')
     .eq('ledger_id', ledgerId)
 
+  // Filter by date field if available, otherwise use created_at
+  // settlements table has both 'date' and 'created_at' fields
   if (startDate) {
-    query = query.gte('created_at', startDate)
+    // Try to filter by 'date' field first (transaction date), fallback to 'created_at'
+    query = query.or(`date.gte.${startDate},and(date.is.null,created_at.gte.${startDate})`)
   }
 
   if (endDate) {
-    query = query.lte('created_at', endDate)
+    // Try to filter by 'date' field first (transaction date), fallback to 'created_at'
+    query = query.or(`date.lte.${endDate},and(date.is.null,created_at.lte.${endDate})`)
   }
 
   query = query.order('created_at', { ascending: false })

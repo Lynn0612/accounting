@@ -171,15 +171,8 @@ export default function TransactionsPage() {
     })
   }, [transactions, dateBoundaries])
 
-  // Optimized: Pre-calculate month boundaries and use single pass grouping
-  const monthBoundaries = useMemo(() => {
-    const now = new Date()
-    return {
-      currentMonthStart: new Date(now.getFullYear(), now.getMonth(), 1),
-      lastMonthStart: new Date(now.getFullYear(), now.getMonth() - 1, 1),
-      lastMonthEnd: new Date(now.getFullYear(), now.getMonth(), 0),
-    }
-  }, [])
+  // Removed month boundaries - no longer grouping by month
+  // All transactions will be displayed directly sorted by date
 
   const groupedTransactions = useMemo(() => {
     // Sort filtered transactions by date first (newest date first), then by createdAt (newest time first)
@@ -203,24 +196,10 @@ export default function TransactionsPage() {
       return dateDiff
     })
 
-    // Single pass grouping for better performance
-    const thisMonth: Transaction[] = []
-    const lastMonth: Transaction[] = []
-    const other: Transaction[] = []
-
-    sortedTransactions.forEach((tx) => {
-      const txDate = tx.date
-      if (txDate >= monthBoundaries.currentMonthStart) {
-        thisMonth.push(tx)
-      } else if (txDate >= monthBoundaries.lastMonthStart && txDate <= monthBoundaries.lastMonthEnd) {
-        lastMonth.push(tx)
-      } else {
-        other.push(tx)
-      }
-    })
-
-    return { thisMonth, lastMonth, other }
-  }, [filteredTransactions, monthBoundaries])
+    // Don't group by month - just return all transactions sorted by date
+    // User requested to remove "Earlier" grouping and show all data directly
+    return { all: sortedTransactions }
+  }, [filteredTransactions])
 
   const handleDateConfirm = useCallback((start: Date, end: Date) => {
     // Enforce at least 1-day range (cannot select same day)
@@ -270,11 +249,9 @@ export default function TransactionsPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto no-scrollbar pb-8 px-6 pt-2">
-        {groupedTransactions.thisMonth.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-text-muted mb-3 px-1">This Month</h3>
-            <div className="flex flex-col gap-3">
-            {groupedTransactions.thisMonth.map((tx) => (
+        {groupedTransactions.all.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            {groupedTransactions.all.map((tx) => (
               <TransactionCard
                 key={tx.id}
                 id={tx.id}
@@ -288,58 +265,9 @@ export default function TransactionsPage() {
                 categoryIcon={tx.icon}
                 iconBg={tx.iconBg}
               />
-              ))}
-            </div>
+            ))}
           </div>
-        )}
-
-        {groupedTransactions.lastMonth.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-text-muted mb-3 px-1">Last Month</h3>
-            <div className="flex flex-col gap-3">
-              {groupedTransactions.lastMonth.map((tx) => (
-                <TransactionCard
-                  key={tx.id}
-                  id={tx.id}
-                  title={tx.name}
-                  date={formatShortDate(tx.date)}
-                  categoryName={tx.category}
-                  amount={tx.amount}
-                  amountPrefix={tx.type === 'income' ? '+' : '-'}
-                  amountColor={tx.type === 'income' ? 'text-green-600' : 'text-[#1e293b]'}
-                  payerText={tx.payer}
-                  categoryIcon={tx.icon}
-                  iconBg={tx.iconBg}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {groupedTransactions.other.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-text-muted mb-3 px-1">Earlier</h3>
-            <div className="flex flex-col gap-3">
-              {groupedTransactions.other.map((tx) => (
-                <TransactionCard
-                  key={tx.id}
-                  id={tx.id}
-                  title={tx.name}
-                  date={formatShortDate(tx.date)}
-                  categoryName={tx.category}
-                  amount={tx.amount}
-                  amountPrefix={tx.type === 'income' ? '+' : '-'}
-                  amountColor={tx.type === 'income' ? 'text-green-600' : 'text-[#1e293b]'}
-                  payerText={tx.payer}
-                  categoryIcon={tx.icon}
-                  iconBg={tx.iconBg}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!loading && filteredTransactions.length === 0 && (
+        ) : !loading && filteredTransactions.length === 0 ? (
           <div className="flex items-center justify-center py-12">
             <p className="text-text-muted">No transactions</p>
           </div>

@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useMemo, memo, useCallback, useEffect } from "react";
+import { useState, useMemo, memo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { startOfMonth, endOfMonth } from "date-fns";
-import { useQueryClient } from "@tanstack/react-query";
 import { useLedger } from "@/contexts/LedgerContext";
 import { useUser } from "@/hooks/useUser";
 import { useProfiles } from "@/hooks/useProfiles";
@@ -39,7 +38,6 @@ const HomePageClient = memo(function HomePageClient({
 }: HomePageClientProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { activeLedger } = useLedger();
   const { data: user } = useUser();
   const { data: profileMap } = useProfiles(user?.id ? [user.id] : []);
@@ -54,17 +52,13 @@ const HomePageClient = memo(function HomePageClient({
   );
 
   // Get current month date range for total income/expenses - recalculate on every render to ensure current month
-  // Use useMemo with month key to detect month changes
+  // Don't memoize to ensure we always get the current month, not a stale cached value
+  // IMPORTANT: Use only date part (YYYY-MM-DD) for database DATE field comparison
   const now = new Date();
-  const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
-  const { startOfMonthStr, endOfMonthStr } = useMemo(() => {
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-    return {
-      startOfMonthStr: monthStart.toISOString().split('T')[0],
-      endOfMonthStr: monthEnd.toISOString(),
-    };
-  }, [currentMonthKey]); // Recalculate when month changes
+  const monthStart = startOfMonth(now);
+  const monthEnd = endOfMonth(now);
+  const startOfMonthStr = monthStart.toISOString().split('T')[0]; // YYYY-MM-DD
+  const endOfMonthStr = monthEnd.toISOString().split('T')[0]; // YYYY-MM-DD (not including time)
   
   // Debug: Log current month range (only in development)
   if (process.env.NODE_ENV === 'development') {
@@ -72,7 +66,7 @@ const HomePageClient = memo(function HomePageClient({
   }
 
   // Recent transactions: filter to current month to prioritize "New Month" focus
-  const { data: realTimeTransactions, refetch: refetchRecent } = useTransactions({
+  const { data: realTimeTransactions } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -83,17 +77,13 @@ const HomePageClient = memo(function HomePageClient({
   }, {
     enabled: !!activeLedger?.id
   });
-  
-  // Force refetch when month changes
-  useEffect(() => {
-    if (activeLedger?.id) {
-      refetchRecent();
-    }
-  }, [startOfMonthStr, activeLedger?.id, refetchRecent]);
 
+  // Settlements should also be filtered to current month to match Recent Transactions logic
   const { data: settlements = [] } = useSettlements({
     ledgerId: activeLedger?.id || null,
     ledgerType: activeLedger?.type as 'ledger' | 'account_book' | undefined,
+    startDate: startOfMonthStr,
+    endDate: endOfMonthStr,
     limit: 5,
     enabled: !!activeLedger?.id,
   });
@@ -124,7 +114,17 @@ const HomePageClient = memo(function HomePageClient({
       };
     });
 
-    const sts = settlements.map((s: any) => {
+    // Filter settlements to current month only (additional client-side filter for safety)
+    // This ensures we only show settlements from the current month, matching the transactions filter
+    const currentMonthSettlements = settlements.filter((s: any) => {
+      const settlementDate = s.date ? new Date(s.date) : s.created_at ? new Date(s.created_at) : null;
+      if (!settlementDate) return false;
+      const settlementMonth = settlementDate.getMonth();
+      const settlementYear = settlementDate.getFullYear();
+      return settlementMonth === now.getMonth() && settlementYear === now.getFullYear();
+    });
+
+    const sts = currentMonthSettlements.map((s: any) => {
       const isIncoming = s.receiver_id === user?.id;
       const sender = participants.find(p => p.id === s.sender_id);
       const receiver = participants.find(p => p.id === s.receiver_id);
@@ -171,9 +171,9 @@ const HomePageClient = memo(function HomePageClient({
     });
 
     return sorted.slice(0, 5);
-  }, [realTimeTransactions, settlements, user?.id, participants]);
+  }, [realTimeTransactions, initialTransactions, settlements, user?.id, participants]);
 
-  const { data: monthlyTransactions, refetch: refetchMonthly } = useTransactions({
+  const { data: monthlyTransactions } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -182,17 +182,10 @@ const HomePageClient = memo(function HomePageClient({
   }, {
     enabled: !!activeLedger?.id && !!user?.id
   });
-  
-  // Force refetch when month changes
-  useEffect(() => {
-    if (activeLedger?.id && user?.id) {
-      refetchMonthly();
-    }
-  }, [startOfMonthStr, activeLedger?.id, user?.id, refetchMonthly]);
 
   // Query all shared expenses (公費總支出) for the current month
   // Note: We don't use userId filter here because shared expenses are ledger-wide
-  const { data: allMonthlyTransactions, isLoading: isLoadingShared, refetch: refetchShared } = useTransactions({
+  const { data: allMonthlyTransactions, isLoading: isLoadingShared } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -200,24 +193,15 @@ const HomePageClient = memo(function HomePageClient({
     type: 'expense',
     includeCategory: true,
   }, {
-    enabled: !!activeLedger?.id,
-    // Don't use initialData to avoid showing stale server-side data
+    enabled: !!activeLedger?.id
   });
-  
-  // Force refetch when month changes
-  useEffect(() => {
-    if (activeLedger?.id) {
-      refetchShared();
-    }
-  }, [startOfMonthStr, activeLedger?.id, refetchShared]);
   
   // Debug: Log shared expenses count (only in development)
   if (process.env.NODE_ENV === 'development') {
     console.log('Monthly shared expenses:', { 
       count: allMonthlyTransactions?.length || 0, 
       isLoading: isLoadingShared,
-      dateRange: { start: startOfMonthStr, end: endOfMonthStr },
-      transactions: allMonthlyTransactions?.slice(0, 3).map((t: any) => ({ id: t.id, date: t.date, amount: t.amount, public_amount: t.public_amount }))
+      dateRange: { start: startOfMonthStr, end: endOfMonthStr }
     });
   }
 
