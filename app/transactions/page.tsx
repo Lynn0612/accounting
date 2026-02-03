@@ -19,6 +19,7 @@ interface Transaction {
   id: string
   name: string
   date: Date
+  createdAt?: Date
   category: string
   amount: number
   payer: string
@@ -249,7 +250,13 @@ export default function TransactionsPage() {
       </header>
 
       <main className="flex-1 overflow-y-auto no-scrollbar pb-8 px-6 pt-2">
-        {groupedTransactions.all.length > 0 ? (
+        {loading ? (
+          <div className="flex flex-col gap-3">
+            {[...Array(5)].map((_, i) => (
+              <TransactionCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : groupedTransactions.all.length > 0 ? (
           <div className="flex flex-col gap-3">
             {groupedTransactions.all.map((tx) => (
               <TransactionCard
@@ -267,7 +274,7 @@ export default function TransactionsPage() {
               />
             ))}
           </div>
-        ) : !loading && filteredTransactions.length === 0 ? (
+        ) : (
           <div className="flex items-center justify-center py-12">
             <p className="text-text-muted">No transactions</p>
           </div>
