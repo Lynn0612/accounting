@@ -95,13 +95,19 @@ async function getDashboardData() {
     };
   }
 
-  // Calculate current month date range using date-fns
-  // IMPORTANT: Use only date part (YYYY-MM-DD) for database DATE field comparison
+  // Calculate current month date range using local timezone
+  // IMPORTANT: Use local timezone to calculate month boundaries, then format as YYYY-MM-DD for database DATE field
   const now = new Date();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-  const startDateStr = monthStart.toISOString().split('T')[0]; // YYYY-MM-DD
-  const endDateStr = monthEnd.toISOString().split('T')[0]; // YYYY-MM-DD (not including time)
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-based (0 = January, 1 = February, etc.)
+  
+  // Calculate start and end of current month in local timezone
+  const monthStartDate = new Date(year, month, 1);
+  const monthEndDate = new Date(year, month + 1, 0); // Last day of current month
+  
+  // Format as YYYY-MM-DD using local date components (not UTC)
+  const startDateStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const endDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEndDate.getDate()).padStart(2, '0')}`;
 
   // Optimized: Fetch all data in parallel with joins
   // Note: We still fetch recentTransactions on server for initial render,
@@ -121,7 +127,7 @@ async function getDashboardData() {
       .eq(scopeColumn, activeLedgerId)
       .eq("user_id", userId)
       .gte("transactions.date", startDateStr)
-      .lte("transactions.date", endDateStr);
+      .lt("transactions.date", `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEndDate.getDate() + 1).padStart(2, '0')}`);
   };
 
   const fetchOutstandingSplits = async (withExpensePaymentSource: boolean) => {
@@ -169,7 +175,7 @@ async function getDashboardData() {
       `)
       .eq(ledgerType === 'account_book' ? 'book_id' : 'ledger_id', activeLedgerId)
       .gte("date", startDateStr)
-      .lte("date", endDateStr)
+      .lt("date", `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEndDate.getDate() + 1).padStart(2, '0')}`)
       .order("date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5)

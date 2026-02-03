@@ -41,8 +41,14 @@ export default function TransactionsPage() {
     new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)
   )
 
+  // Format dates for database query
+  // IMPORTANT: For endDate, we need to include the full day, so we add one day and use 'lt' instead of 'lte'
+  // Or we can use the next day's date string for 'lt' comparison
   const startDateStr = startDate.toISOString().split('T')[0]
-  const endDateStr = endDate.toISOString().split('T')[0]
+  // For endDate, add one day to ensure we include all records on the selected end date
+  const endDateForQuery = new Date(endDate)
+  endDateForQuery.setDate(endDateForQuery.getDate() + 1)
+  const endDateStr = endDateForQuery.toISOString().split('T')[0] // This will be used with 'lt' instead of 'lte'
 
   const { data: transactionsData = [], isLoading: loading } = useTransactions({
     ledgerId: activeLedger?.id || '',

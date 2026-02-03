@@ -59,7 +59,12 @@ const getTransactions = async (params: TransactionQueryParams) => {
       query = query.gte('transactions.date', startDate)
     }
     if (endDate) {
-      query = query.lte('transactions.date', endDate)
+      // Use 'lt' (less than) with next day to include all records on the endDate
+      // This ensures that if endDate is '2026-01-31', we get all records from 2026-01-31
+      const endDateObj = new Date(endDate)
+      endDateObj.setDate(endDateObj.getDate() + 1)
+      const nextDayStr = endDateObj.toISOString().split('T')[0]
+      query = query.lt('transactions.date', nextDayStr)
     }
 
     query = query.order('transactions(created_at)', { ascending: false })
@@ -114,7 +119,11 @@ const getTransactions = async (params: TransactionQueryParams) => {
         queryWithPayer = queryWithPayer.gte('transactions.date', startDate)
       }
       if (endDate) {
-        queryWithPayer = queryWithPayer.lte('transactions.date', endDate)
+        // Use 'lt' (less than) with next day to include all records on the endDate
+        const endDateObj = new Date(endDate)
+        endDateObj.setDate(endDateObj.getDate() + 1)
+        const nextDayStr = endDateObj.toISOString().split('T')[0]
+        queryWithPayer = queryWithPayer.lt('transactions.date', nextDayStr)
       }
 
       queryWithPayer = queryWithPayer.order('transactions(created_at)', { ascending: false })
@@ -171,7 +180,11 @@ const getTransactions = async (params: TransactionQueryParams) => {
   }
 
   if (endDate) {
-    query = query.lte('date', endDate)
+    // Use 'lt' (less than) with next day to include all records on the endDate
+    const endDateObj = new Date(endDate)
+    endDateObj.setDate(endDateObj.getDate() + 1)
+    const nextDayStr = endDateObj.toISOString().split('T')[0]
+    query = query.lt('date', nextDayStr)
   }
 
   query = query.order('created_at', { ascending: false })

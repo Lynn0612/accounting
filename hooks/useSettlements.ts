@@ -47,8 +47,11 @@ const getSettlements = async ({
   }
 
   if (endDate) {
-    // Try to filter by 'date' field first (transaction date), fallback to 'created_at'
-    query = query.or(`date.lte.${endDate},and(date.is.null,created_at.lte.${endDate})`)
+    // Use 'lt' (less than) with next day to include all records on the endDate
+    const endDateObj = new Date(endDate)
+    endDateObj.setDate(endDateObj.getDate() + 1)
+    const nextDayStr = endDateObj.toISOString().split('T')[0]
+    query = query.or(`date.lt.${nextDayStr},and(date.is.null,created_at.lt.${nextDayStr})`)
   }
 
   query = query.order('created_at', { ascending: false })

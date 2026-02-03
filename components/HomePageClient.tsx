@@ -53,16 +53,29 @@ const HomePageClient = memo(function HomePageClient({
 
   // Get current month date range for total income/expenses - recalculate on every render to ensure current month
   // Don't memoize to ensure we always get the current month, not a stale cached value
-  // IMPORTANT: Use only date part (YYYY-MM-DD) for database DATE field comparison
+  // IMPORTANT: Use local timezone to calculate month boundaries, then format as YYYY-MM-DD for database DATE field
   const now = new Date();
-  const monthStart = startOfMonth(now);
-  const monthEnd = endOfMonth(now);
-  const startOfMonthStr = monthStart.toISOString().split('T')[0]; // YYYY-MM-DD
-  const endOfMonthStr = monthEnd.toISOString().split('T')[0]; // YYYY-MM-DD (not including time)
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-based (0 = January, 1 = February, etc.)
+  
+  // Calculate start and end of current month in local timezone
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month + 1, 0); // Last day of current month
+  
+  // Format as YYYY-MM-DD using local date components (not UTC)
+  const startOfMonthStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const endOfMonthStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
   
   // Debug: Log current month range (only in development)
   if (process.env.NODE_ENV === 'development') {
-    console.log('Current month range:', { startOfMonthStr, endOfMonthStr, currentMonth: now.getMonth() + 1, currentYear: now.getFullYear() });
+    console.log('Current month range:', { 
+      startOfMonthStr, 
+      endOfMonthStr, 
+      currentMonth: month + 1, 
+      currentYear: year,
+      monthStartLocal: monthStart.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+      monthEndLocal: monthEnd.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+    });
   }
 
   // Recent transactions: filter to current month to prioritize "New Month" focus
@@ -91,7 +104,15 @@ const HomePageClient = memo(function HomePageClient({
   const displayTransactions = useMemo(() => {
     // Only use real-time transactions (current month), never fall back to initial server data
     // This ensures we show current month data, not cached server-side data from previous month
-    const txs = (realTimeTransactions || []).map(tx => {
+    // Additional client-side filter to ensure only current month transactions are shown
+    const currentMonthTxs = (realTimeTransactions || []).filter((tx: any) => {
+      const txDate = new Date(tx.date);
+      const txYear = txDate.getFullYear();
+      const txMonth = txDate.getMonth();
+      return txYear === year && txMonth === month;
+    });
+    
+    const txs = currentMonthTxs.map(tx => {
       // Pre-compute formatted date and payer text for each transaction
       const formattedDate = new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       let payerText = '';
@@ -210,22 +231,74 @@ const HomePageClient = memo(function HomePageClient({
   // Real-time calculation for Total Balance (個人餘額：個人的分帳收入 - 個人的分帳支出)
   // Memoize calculations to avoid unnecessary recalculations
   const { totalIncome, totalExpenses } = useMemo(() => {
-  const transactionsToUse = monthlyTransactions || [];
+    const transactionsToUse = monthlyTransactions || [];
+    
+    // Debug: Log calculation details (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Total Balance Calculation:', {
+        totalTransactions: transactionsToUse.length,
+        dateRange: { start: startOfMonthStr, end: endOfMonthStr },
+        incomeTransactions: transactionsToUse.filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true && tx.income_mode !== 'deposit'),
+        expenseTransactions: transactionsToUse.filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit'),
+        sampleTransactions: transactionsToUse.slice(0, 3).map((tx: any) => ({
+          id: tx.id,
+          date: tx.date,
+          type: tx.type,
+          amount: tx.amount,
+          income_mode: tx.income_mode,
+          expense_payment_source: tx.expense_payment_source
+        }))
+      });
+    }
+    
+    const income = transactionsToUse
+      .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true && tx.income_mode !== 'deposit') // 排除還款和儲值金
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    
+    const expenses = transactionsToUse
+      .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')
+      .reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    
+    // Debug: Log calculated totals
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Total Balance Totals:', { income, expenses, balance: income - expenses });
+    }
+    
     return {
-      totalIncome: transactionsToUse
-        .filter((tx: any) => tx.type === 'income' && tx.isSettlement !== true && tx.income_mode !== 'deposit') // 排除還款和儲值金
-        .reduce((sum, tx) => sum + Number(tx.amount), 0),
-      totalExpenses: transactionsToUse
-    .filter((tx: any) => tx.type === 'expense' && tx.expense_payment_source !== 'deposit')
-        .reduce((sum, tx) => sum + Number(tx.amount), 0),
+      totalIncome: income,
+      totalExpenses: expenses,
     };
-  }, [monthlyTransactions]);
+  }, [monthlyTransactions, startOfMonthStr, endOfMonthStr]);
 
   // Calculate Total Shared Expense (公費總支出)
   // Only add the public_amount (公費金額), not the total transaction amount
   const totalSharedExpense = useMemo(() => {
     const transactionsToUse = allMonthlyTransactions || [];
-    return transactionsToUse
+    
+    // Debug: Log calculation details (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Total Shared Expense Calculation:', {
+        totalTransactions: transactionsToUse.length,
+        dateRange: { start: startOfMonthStr, end: endOfMonthStr },
+        publicExpenses: transactionsToUse.filter((tx: any) => 
+          tx.type === 'expense' && 
+          tx.is_public_expense === true &&
+          tx.expense_payment_source !== 'deposit' &&
+          tx.public_amount != null
+        ),
+        sampleTransactions: transactionsToUse.slice(0, 5).map((tx: any) => ({
+          id: tx.id,
+          date: tx.date,
+          type: tx.type,
+          amount: tx.amount,
+          is_public_expense: tx.is_public_expense,
+          public_amount: tx.public_amount,
+          expense_payment_source: tx.expense_payment_source
+        }))
+      });
+    }
+    
+    const total = transactionsToUse
       .filter((tx: any) => 
         tx.type === 'expense' && 
         tx.is_public_expense === true &&
@@ -233,7 +306,14 @@ const HomePageClient = memo(function HomePageClient({
         tx.public_amount != null // Only count transactions with public_amount
       )
       .reduce((sum, tx) => sum + Number(tx.public_amount || 0), 0);
-  }, [allMonthlyTransactions]);
+    
+    // Debug: Log calculated total
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Total Shared Expense:', total);
+    }
+    
+    return total;
+  }, [allMonthlyTransactions, startOfMonthStr, endOfMonthStr]);
 
   // 顯示該使用者的個人結餘 (只限本月) - always use real-time monthly data, ignore initial server data
   const { displayIncome, displayExpenses, displayPercentage } = useMemo(() => {
