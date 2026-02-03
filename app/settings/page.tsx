@@ -2090,7 +2090,7 @@ export default function SettingsPage() {
 
   return (
     <div className="relative min-h-screen w-full flex flex-col max-w-md mx-auto overflow-x-hidden bg-background-light font-display text-slate-800 transition-colors duration-200 pb-32">
-      <header className="sticky top-0 z-40 bg-background-light/90 backdrop-blur-md px-6 py-4 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-background-light/90 backdrop-blur-md px-6 py- flex items-center justify-between">
         <div className="w-10"></div>
         <h1 className="text-xl font-extrabold tracking-tight text-slate-900 text-center flex-1">
           Account Book
@@ -2264,7 +2264,7 @@ export default function SettingsPage() {
             setLineNotifications(false);
           }}></div>
           <div className="relative flex h-full min-h-screen w-full flex-col max-w-md mx-auto bg-background-light overflow-x-hidden shadow-2xl">
-            <header className="sticky top-0 z-20 flex items-center justify-between px-6 pt-8 pb-2 bg-background-light/95 backdrop-blur-sm">
+            <header className="sticky top-0 z-20 flex items-center justify-between px-6 pt-12 pb-2 bg-background-light/95 backdrop-blur-sm">
               <button
                 onClick={() => {
                   setShowCreateModal(false);
@@ -2453,7 +2453,7 @@ export default function SettingsPage() {
       {showMemberModal && selectedBook && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background-light">
           <div className="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl bg-background-light">
-            <header className="flex items-center justify-between px-6 py-4 bg-background-light sticky top-0 z-20">
+            <header className="flex items-center justify-between px-6 pt-12 pb-2 bg-background-light/95 backdrop-blur-sm sticky top-0 z-20">
               <button
                 onClick={() => {
                   // Revert pending changes when closing without saving
@@ -2462,7 +2462,7 @@ export default function SettingsPage() {
                   setShowMemberModal(false);
                   setSelectedBook(null);
                 }}
-                className="flex items-center justify-center size-10 rounded-full bg-white shadow-sm border border-gray-100 hover:bg-gray-50 transition-all active:scale-95 text-gray-900"
+                className="flex items-center justify-center size-10 rounded-full bg-white shadow-sm hover:shadow-md transition-all active:scale-95 text-gray-900"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>

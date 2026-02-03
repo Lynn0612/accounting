@@ -231,7 +231,7 @@ const HomePageClient = memo(function HomePageClient({
   // Real-time calculation for Total Balance (個人餘額：個人的分帳收入 - 個人的分帳支出)
   // Memoize calculations to avoid unnecessary recalculations
   const { totalIncome, totalExpenses } = useMemo(() => {
-    const transactionsToUse = monthlyTransactions || [];
+  const transactionsToUse = monthlyTransactions || [];
     
     // Debug: Log calculation details (only in development)
     if (process.env.NODE_ENV === 'development') {

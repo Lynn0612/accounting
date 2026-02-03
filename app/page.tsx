@@ -54,10 +54,10 @@ async function getDashboardData() {
   // Check both ledger_members and book_members to support both types
   const [ledgerMembershipResult, bookMembershipResult] = await Promise.all([
     supabase
-      .from('ledger_members')
-      .select('ledger_id')
-      .eq('user_id', userId)
-      .limit(1)
+    .from('ledger_members')
+    .select('ledger_id')
+    .eq('user_id', userId)
+    .limit(1)
       .maybeSingle(),
     supabase
       .from('book_members')

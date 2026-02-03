@@ -14,24 +14,43 @@ const supabase = createClient(
 const LINE_TOKEN = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN")!;
 
 // Get last month's date range (UTC+8 Taipei time)
-function getLastMonthRange() {
-  // Get current time in Taipei (UTC+8)
-  const now = new Date();
-  const taipeiOffset = 8 * 60; // UTC+8 in minutes
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const taipeiTime = new Date(utc + (taipeiOffset * 60000));
+// If monthParam is provided (format: YYYY-MM), use that month instead of last month
+function getLastMonthRange(monthParam?: string) {
+  let targetDate: Date;
   
-  // Calculate last month
-  const lastMonth = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
-  const lastMonthEnd = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth(), 0);
+  if (monthParam) {
+    // Parse month parameter (YYYY-MM)
+    const [yearStr, monthStr] = monthParam.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+      throw new Error(`Invalid month parameter: ${monthParam}. Use format YYYY-MM`);
+    }
+    targetDate = new Date(year, month - 1, 1); // month is 0-indexed
+  } else {
+    // Get current time in Taipei (UTC+8)
+    const now = new Date();
+    const taipeiOffset = 8 * 60; // UTC+8 in minutes
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const taipeiTime = new Date(utc + (taipeiOffset * 60000));
+    
+    // Calculate last month
+    targetDate = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
+  }
   
-  const year = lastMonth.getFullYear();
-  const month = lastMonth.getMonth() + 1;
+  const year = targetDate.getFullYear();
+  const month = targetDate.getMonth() + 1; // 0-indexed month
   
+  // Calculate start and end of the target month
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
+  const lastDayOfMonth = new Date(year, month, 0).getDate();
+  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
   
-  return { year, month, startDate, endDate };
+  // For query, use next day with 'lt' to include all records on the end date
+  const endDateNextDay = new Date(year, month, 1); // First day of next month
+  const endDateNextDayStr = `${endDateNextDay.getFullYear()}-${String(endDateNextDay.getMonth() + 1).padStart(2, '0')}-01`;
+  
+  return { year, month, startDate, endDate, endDateNextDayStr };
 }
 
 serve(async (req) => {
@@ -40,7 +59,11 @@ serve(async (req) => {
   }
 
   try {
-    console.log("Starting LINE ledger summary...");
+    // Check for month parameter in query string (for manual triggering)
+    const url = new URL(req.url);
+    const monthParam = url.searchParams.get('month');
+    
+    console.log("Starting LINE ledger summary...", monthParam ? `for month: ${monthParam}` : "for last month");
 
     // Get all users with notifications enabled from ledger_members
     const { data: ledgerUsers, error: ledgerError } = await supabase
@@ -72,11 +95,16 @@ serve(async (req) => {
       );
     }
 
+    // Get date range (supports month parameter for manual triggering)
+    const { year, month, startDate, endDate, endDateNextDayStr } = getLastMonthRange(monthParam || undefined);
+    
+    console.log(`Date range: ${startDate} to ${endDate} (query: gte ${startDate} AND lt ${endDateNextDayStr})`);
+
     const results: { userId: string; success: boolean; error?: string }[] = [];
 
     for (const userId of userIds) {
       try {
-        await processUser(userId);
+        await processUser(userId, startDate, endDateNextDayStr, year, month);
         results.push({ userId, success: true });
       } catch (err) {
         console.error(`Error processing user ${userId}:`, err);
@@ -98,8 +126,8 @@ serve(async (req) => {
   }
 });
 
-async function processUser(userId: string) {
-  console.log(`Processing user: ${userId}`);
+async function processUser(userId: string, startDate: string, endDateNextDayStr: string, year: number, month: number) {
+  console.log(`Processing user: ${userId} for ${year}/${String(month).padStart(2, '0')}`);
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
@@ -174,15 +202,13 @@ async function processUser(userId: string) {
     return;
   }
 
-  const { year, month, startDate, endDate } = getLastMonthRange();
-
   // Calculate all ledger summaries first
   let grandTotalExpense = 0;
   let grandTotalIncome = 0;
   const ledgerSummaries: string[] = [];
 
   for (const ledger of ledgers) {
-    const summary = await calculateLedgerSummary(ledger, userId, startDate, endDate);
+    const summary = await calculateLedgerSummary(ledger, userId, startDate, endDateNextDayStr);
     grandTotalExpense += summary.totalExpense;
     grandTotalIncome += summary.totalIncome;
     ledgerSummaries.push(summary.text);
@@ -214,18 +240,21 @@ async function calculateLedgerSummary(
   ledger: { id: string; name: string; type: string; isMultiMember: boolean },
   currentUserId: string,
   startDate: string,
-  endDate: string
+  endDateNextDayStr: string
 ): Promise<LedgerSummaryResult> {
   const scopeColumn = ledger.type === 'account_book' ? 'book_id' : 'ledger_id';
   const ledgerTypeLabel = ledger.isMultiMember ? '多人' : '個人';
 
   // Fetch transactions for this ledger within date range
+  // Use 'lt' with next day to include all records on the end date
   const { data: transactions, error: txError } = await supabase
     .from("transactions")
-    .select("id, amount, type, payer_id, category_id, income_mode, expense_payment_source")
+    .select("id, amount, type, payer_id, category_id, income_mode, expense_payment_source, is_public_expense, public_amount")
     .eq(scopeColumn, ledger.id)
     .gte("date", startDate)
-    .lte("date", endDate);
+    .lt("date", endDateNextDayStr);
+  
+  console.log(`Ledger ${ledger.name}: Found ${transactions?.length || 0} transactions in date range ${startDate} to ${endDateNextDayStr}`);
 
   if (txError || !transactions || transactions.length === 0) {
     return {

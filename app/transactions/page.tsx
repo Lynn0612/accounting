@@ -263,7 +263,7 @@ export default function TransactionsPage() {
             ))}
           </div>
         ) : groupedTransactions.all.length > 0 ? (
-          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
             {groupedTransactions.all.map((tx) => (
               <TransactionCard
                 key={tx.id}
@@ -278,8 +278,8 @@ export default function TransactionsPage() {
                 categoryIcon={tx.icon}
                 iconBg={tx.iconBg}
               />
-            ))}
-          </div>
+              ))}
+            </div>
         ) : (
           <div className="flex items-center justify-center py-12">
             <p className="text-text-muted">No transactions</p>
