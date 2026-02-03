@@ -399,21 +399,29 @@ export default function StatisticsPage() {
   }
 
   const handlePrevPeriod = () => {
-    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
-    const newEndDate = new Date(startDate)
-    newEndDate.setDate(newEndDate.getDate() - 1)
-    const newStartDate = new Date(newEndDate)
-    newStartDate.setDate(newStartDate.getDate() - daysDiff)
+    // Calculate the previous month based on startDate
+    const prevMonth = new Date(startDate)
+    prevMonth.setMonth(prevMonth.getMonth() - 1)
+    
+    // Set to first day of previous month
+    const newStartDate = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), 1)
+    // Set to last day of previous month
+    const newEndDate = new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0)
+    
     setStartDate(newStartDate)
     setEndDate(newEndDate)
   }
 
   const handleNextPeriod = () => {
-    const daysDiff = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
-    const newStartDate = new Date(endDate)
-    newStartDate.setDate(newStartDate.getDate() + 1)
-    const newEndDate = new Date(newStartDate)
-    newEndDate.setDate(newEndDate.getDate() + daysDiff)
+    // Calculate the next month based on endDate
+    const nextMonth = new Date(endDate)
+    nextMonth.setMonth(nextMonth.getMonth() + 1)
+    
+    // Set to first day of next month
+    const newStartDate = new Date(nextMonth.getFullYear(), nextMonth.getMonth(), 1)
+    // Set to last day of next month
+    const newEndDate = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0)
+    
     setStartDate(newStartDate)
     setEndDate(newEndDate)
   }
