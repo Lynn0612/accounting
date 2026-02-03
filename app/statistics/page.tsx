@@ -188,7 +188,10 @@ export default function StatisticsPage() {
       const ledgerId = activeLedger.id
       const transactionIdColumn = activeLedger.type === 'account_book' ? 'book_id' : 'ledger_id'
       const startDateStr = startDate.toISOString().split('T')[0]
-      const endDateStr = endDate.toISOString().split('T')[0]
+      // Use 'lt' (less than) with next day to include all records on the endDate
+      const endDateObj = new Date(endDate)
+      endDateObj.setDate(endDateObj.getDate() + 1)
+      const endDateNextDayStr = endDateObj.toISOString().split('T')[0]
 
       // Optimized: Fetch transactions with categories in one join query
       let query = supabase
@@ -213,7 +216,7 @@ export default function StatisticsPage() {
         .eq(transactionIdColumn, ledgerId)
         .eq('type', statType === 'expense' ? 'expense' : 'income')
         .gte('date', startDateStr)
-        .lte('date', endDateStr)
+        .lt('date', endDateNextDayStr)
 
       // Filter for shared expenses only when showSharedExpenseOnly is true and statType is expense
       if (showSharedExpenseOnly && statType === 'expense') {

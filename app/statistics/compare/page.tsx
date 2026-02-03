@@ -128,9 +128,16 @@ function ComparePageContent() {
       }
 
       const period1StartStr = formatDateStr(period1Start)
-      const period1EndStr = formatDateStr(period1End)
+      // Use next day for 'lt' comparison to include all records on the end date
+      const period1EndNextDay = new Date(period1End)
+      period1EndNextDay.setDate(period1EndNextDay.getDate() + 1)
+      const period1EndNextDayStr = formatDateStr(period1EndNextDay)
+      
       const period2StartStr = formatDateStr(period2Start)
-      const period2EndStr = formatDateStr(period2End)
+      // Use next day for 'lt' comparison to include all records on the end date
+      const period2EndNextDay = new Date(period2End)
+      period2EndNextDay.setDate(period2EndNextDay.getDate() + 1)
+      const period2EndNextDayStr = formatDateStr(period2EndNextDay)
 
       // Fetch transactions directly (not splits) for both periods
       // If showSharedExpenseOnly is true, only fetch public expenses
@@ -154,7 +161,7 @@ function ComparePageContent() {
         .eq(transactionIdColumn, ledgerId)
         .eq('type', statType === 'expense' ? 'expense' : 'income')
         .gte('date', period1StartStr)
-        .lte('date', period1EndStr)
+        .lt('date', period1EndNextDayStr)
       
       let queryB = supabase
         .from('transactions')
@@ -176,7 +183,7 @@ function ComparePageContent() {
         .eq(transactionIdColumn, ledgerId)
         .eq('type', statType === 'expense' ? 'expense' : 'income')
         .gte('date', period2StartStr)
-        .lte('date', period2EndStr)
+        .lt('date', period2EndNextDayStr)
       
       // Filter for public expenses if in public expense comparison mode
       if (showSharedExpenseOnly && statType === 'expense') {
