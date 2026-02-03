@@ -51,7 +51,9 @@ export default function StatisticsPage() {
   })
   const [endDate, setEndDate] = useState<Date>(() => {
     const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    // Set to last day of current month, but use date only (no time component)
+    // This ensures correct date comparison without timezone issues
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0)
   })
   const [categories, setCategories] = useState<CategoryData[]>([])
   const [totalAmount, setTotalAmount] = useState(0)
@@ -187,11 +189,35 @@ export default function StatisticsPage() {
 
       const ledgerId = activeLedger.id
       const transactionIdColumn = activeLedger.type === 'account_book' ? 'book_id' : 'ledger_id'
-      const startDateStr = startDate.toISOString().split('T')[0]
+      
+      // Format dates using local timezone to avoid UTC conversion issues
+      // IMPORTANT: Use local date components, not UTC, to ensure correct date range filtering
+      const formatDateStr = (date: Date) => {
+        const year = date.getFullYear()
+        const month = String(date.getMonth() + 1).padStart(2, '0')
+        const day = String(date.getDate()).padStart(2, '0')
+        return `${year}-${month}-${day}`
+      }
+      
+      const startDateStr = formatDateStr(startDate)
       // Use 'lt' (less than) with next day to include all records on the endDate
-      const endDateObj = new Date(endDate)
-      endDateObj.setDate(endDateObj.getDate() + 1)
-      const endDateNextDayStr = endDateObj.toISOString().split('T')[0]
+      // IMPORTANT: This ensures that if endDate is '2026-02-28', we query with 'lt 2026-02-29'
+      // which includes all records from 2026-02-28
+      const endDateNextDay = new Date(endDate)
+      endDateNextDay.setDate(endDateNextDay.getDate() + 1)
+      const endDateNextDayStr = formatDateStr(endDateNextDay)
+
+      // Debug: Log date range for verification (only in development)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Statistics date range:', {
+          startDate: startDateStr,
+          endDate: formatDateStr(endDate),
+          endDateNextDay: endDateNextDayStr,
+          queryRange: `gte ${startDateStr} AND lt ${endDateNextDayStr}`,
+          statType,
+          showSharedExpenseOnly
+        })
+      }
 
       // Optimized: Fetch transactions with categories in one join query
       let query = supabase
