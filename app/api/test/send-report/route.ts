@@ -113,23 +113,53 @@ async function calculateLedgerSummary(
     });
   }
   
-  // Calculate totals
+  // Calculate totals and outstanding (like useOutstandingTotal)
   let totalExpense = 0;
   let totalIncome = 0;
   let totalPublicExpense = 0;
+  const categoryExpenses = new Map<string, number>();
+  
+  // Outstanding calculation per user (receivable - payable from current user's perspective)
+  const receivableFrom = new Map<string, number>(); // others owe me
+  const payableTo = new Map<string, number>(); // I owe others
   
   for (const tx of transactions) {
+    const amount = Number(tx.amount) || 0;
     const txSplits = splitsMap.get(tx.id) || [];
+    
+    // Find current user's split amount
     const mySplit = txSplits.find(s => s.user_id === currentUserId);
     const myAmount = mySplit?.amount || 0;
     
     if (tx.type === "expense") {
+      // Skip deposit-funded expenses for outstanding
       if (tx.expense_payment_source === 'deposit') continue;
+      
+      // Only count current user's portion for totals
       totalExpense += myAmount;
       
       // Calculate public expense
       if (tx.is_public_expense === true && tx.public_amount != null) {
         totalPublicExpense += Number(tx.public_amount);
+      }
+      
+      // Track category expenses for top 3 (only user's portion)
+      if (tx.category_id && myAmount > 0) {
+        categoryExpenses.set(tx.category_id, (categoryExpenses.get(tx.category_id) || 0) + myAmount);
+      }
+      
+      // Outstanding calculation (like useOutstandingTotal)
+      const payerId = tx.payer_id;
+      for (const split of txSplits) {
+        if (split.user_id === payerId) continue; // payer doesn't owe themselves
+        
+        if (payerId === currentUserId && split.user_id !== currentUserId) {
+          // I paid, others owe me
+          receivableFrom.set(split.user_id, (receivableFrom.get(split.user_id) || 0) + split.amount);
+        } else if (split.user_id === currentUserId && payerId !== currentUserId) {
+          // Others paid, I owe them
+          payableTo.set(payerId, (payableTo.get(payerId) || 0) + split.amount);
+        }
       }
     }
     
@@ -137,6 +167,95 @@ async function calculateLedgerSummary(
       if (tx.income_mode !== 'deposit') {
         totalIncome += myAmount;
       }
+      
+      // bonus/refund income: payer owes split users (reverse direction)
+      if (tx.income_mode === 'bonus' || tx.income_mode === 'refund') {
+        const payerId = tx.payer_id;
+        for (const split of txSplits) {
+          if (split.user_id === payerId) continue;
+          
+          if (payerId === currentUserId && split.user_id !== currentUserId) {
+            // I owe others (reverse)
+            payableTo.set(split.user_id, (payableTo.get(split.user_id) || 0) + split.amount);
+          } else if (split.user_id === currentUserId && payerId !== currentUserId) {
+            // Others owe me (reverse)
+            receivableFrom.set(payerId, (receivableFrom.get(payerId) || 0) + split.amount);
+          }
+        }
+      }
+    }
+  }
+  
+  // Fetch settlements to offset outstanding
+  // Note: settlements table uses ledger_id for both ledgers and account_books
+  // For account_books, ledger_id stores the account_book.id
+  const { data: settlementsReceived } = await supabase
+    .from("settlements")
+    .select("amount, sender_id")
+    .eq("ledger_id", ledger.id)
+    .eq("receiver_id", currentUserId);
+  
+  const { data: settlementsPaid } = await supabase
+    .from("settlements")
+    .select("amount, receiver_id")
+    .eq("ledger_id", ledger.id)
+    .eq("sender_id", currentUserId);
+  
+  // Apply settlements
+  for (const s of settlementsReceived || []) {
+    const amt = Number(s.amount) || 0;
+    const senderId = s.sender_id;
+    // Someone paid me, reduce what they owe me
+    receivableFrom.set(senderId, (receivableFrom.get(senderId) || 0) - amt);
+  }
+  
+  for (const s of settlementsPaid || []) {
+    const amt = Number(s.amount) || 0;
+    const receiverId = s.receiver_id;
+    // I paid someone, reduce what I owe them
+    payableTo.set(receiverId, (payableTo.get(receiverId) || 0) - amt);
+  }
+  
+  // Get category names for top 3
+  const categoryIds = Array.from(categoryExpenses.keys());
+  let categoryMap = new Map<string, { name: string; icon: string }>();
+  
+  if (categoryIds.length > 0) {
+    const { data: categories } = await supabase
+      .from("categories")
+      .select("id, name, icon")
+      .in("id", categoryIds);
+    
+    for (const c of categories || []) {
+      categoryMap.set(c.id, { name: c.name, icon: c.icon || '📦' });
+    }
+  }
+  
+  // Get top 3 categories
+  const topCategories = Array.from(categoryExpenses.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([catId, amount]) => {
+      const cat = categoryMap.get(catId);
+      const percentage = totalExpense > 0 ? Math.round((amount / totalExpense) * 100) : 0;
+      return { name: cat?.name || 'Unknown', icon: cat?.icon || '📦', amount, percentage };
+    });
+  
+  // Get profiles for outstanding users
+  const outstandingUserIds = new Set<string>();
+  receivableFrom.forEach((_, uid) => outstandingUserIds.add(uid));
+  payableTo.forEach((_, uid) => outstandingUserIds.add(uid));
+  
+  let profileMap = new Map<string, string>();
+  
+  if (outstandingUserIds.size > 0) {
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("id", Array.from(outstandingUserIds));
+    
+    for (const p of profiles || []) {
+      profileMap.set(p.id, p.full_name || 'Unknown');
     }
   }
   
@@ -147,6 +266,53 @@ async function calculateLedgerSummary(
   
   if (ledger.isMultiMember && totalPublicExpense > 0) {
     text += `公費總支出：$${totalPublicExpense.toLocaleString()}\n`;
+  }
+  
+  // Outstanding (only for multi-member ledgers)
+  if (ledger.isMultiMember) {
+    const receivables: string[] = [];
+    const payables: string[] = [];
+    
+    // 應收 (others owe me) - if negative, means I owe them
+    for (const [uid, amt] of receivableFrom) {
+      const name = profileMap.get(uid) || 'Unknown';
+      if (amt > 0) {
+        receivables.push(`💵 應收 ${name} $${Math.round(amt).toLocaleString()}`);
+      } else if (amt < 0) {
+        // Negative receivable = I owe them
+        payables.push(`⚠️ 應付 ${name} $${Math.round(Math.abs(amt)).toLocaleString()}`);
+      }
+    }
+    
+    // 應付 (I owe others) - if negative, means they owe me
+    for (const [uid, amt] of payableTo) {
+      const name = profileMap.get(uid) || 'Unknown';
+      if (amt > 0) {
+        payables.push(`⚠️ 應付 ${name} $${Math.round(amt).toLocaleString()}`);
+      } else if (amt < 0) {
+        // Negative payable = they owe me
+        receivables.push(`💵 應收 ${name} $${Math.round(Math.abs(amt)).toLocaleString()}`);
+      }
+    }
+    
+    if (receivables.length > 0) {
+      text += `\n${receivables.join('\n')}\n`;
+    }
+    if (payables.length > 0) {
+      text += `\n${payables.join('\n')}\n`;
+    }
+  }
+  
+  // Top 3 categories
+  if (topCategories.length > 0) {
+    const medals = ['1️⃣', '2️⃣', '3️⃣'];
+    text += `\nTOP `;
+    topCategories.forEach((_, i) => text += medals[i]);
+    text += `\n`;
+    
+    topCategories.forEach((cat) => {
+      text += `${cat.icon} ${cat.name} ${cat.percentage}%\n`;
+    });
   }
   
   text += `━━━━━━━━━━━━━━━`;
