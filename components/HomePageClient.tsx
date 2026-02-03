@@ -51,17 +51,18 @@ const HomePageClient = memo(function HomePageClient({
     activeLedger?.type as 'ledger' | 'account_book'
   );
 
-  // Get current month date range for total income/expenses - memoize to avoid recalculation
-  // Recalculate when month changes by tracking current month/year
-  const { startOfMonthStr, endOfMonthStr } = useMemo(() => {
-    const now = new Date();
-    const start = startOfMonth(now);
-    const end = endOfMonth(now);
-    return {
-      startOfMonthStr: start.toISOString().split('T')[0],
-      endOfMonthStr: end.toISOString(),
-    };
-  }, []); // Will recalculate when component re-renders (React Query will refetch when month changes)
+  // Get current month date range for total income/expenses - recalculate on every render to ensure current month
+  // Don't memoize to ensure we always get the current month, not a stale cached value
+  const now = new Date();
+  const monthStart = startOfMonth(now);
+  const monthEnd = endOfMonth(now);
+  const startOfMonthStr = monthStart.toISOString().split('T')[0];
+  const endOfMonthStr = monthEnd.toISOString();
+  
+  // Debug: Log current month range (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Current month range:', { startOfMonthStr, endOfMonthStr, currentMonth: now.getMonth() + 1, currentYear: now.getFullYear() });
+  }
 
   // Recent transactions: filter to current month to prioritize "New Month" focus
   const { data: realTimeTransactions } = useTransactions({
@@ -84,7 +85,9 @@ const HomePageClient = memo(function HomePageClient({
   });
 
   const displayTransactions = useMemo(() => {
-    const txs = (realTimeTransactions || initialTransactions).map(tx => {
+    // Only use real-time transactions (current month), never fall back to initial server data
+    // This ensures we show current month data, not cached server-side data from previous month
+    const txs = (realTimeTransactions || []).map(tx => {
       // Pre-compute formatted date and payer text for each transaction
       const formattedDate = new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       let payerText = '';
@@ -168,7 +171,7 @@ const HomePageClient = memo(function HomePageClient({
 
   // Query all shared expenses (公費總支出) for the current month
   // Note: We don't use userId filter here because shared expenses are ledger-wide
-  const { data: allMonthlyTransactions } = useTransactions({
+  const { data: allMonthlyTransactions, isLoading: isLoadingShared } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
     startDate: startOfMonthStr,
@@ -178,6 +181,15 @@ const HomePageClient = memo(function HomePageClient({
   }, {
     enabled: !!activeLedger?.id
   });
+  
+  // Debug: Log shared expenses count (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Monthly shared expenses:', { 
+      count: allMonthlyTransactions?.length || 0, 
+      isLoading: isLoadingShared,
+      dateRange: { start: startOfMonthStr, end: endOfMonthStr }
+    });
+  }
 
   const [isOutstandingModalOpen, setIsOutstandingModalOpen] = useState(false);
 
@@ -209,15 +221,15 @@ const HomePageClient = memo(function HomePageClient({
       .reduce((sum, tx) => sum + Number(tx.public_amount || 0), 0);
   }, [allMonthlyTransactions]);
 
-  // 顯示該使用者的個人結餘 (只限本月) - memoize to avoid recalculation
+  // 顯示該使用者的個人結餘 (只限本月) - always use real-time monthly data, ignore initial server data
   const { displayIncome, displayExpenses, displayPercentage } = useMemo(() => {
-    const income = monthlyTransactions ? totalIncome : initialIncome;
-    const expenses = monthlyTransactions ? totalExpenses : initialExpenses;
-    const percentage = monthlyTransactions 
-      ? (income > 0 ? Math.min(100, Math.max(0, Math.round((expenses / income) * 100))) : 0)
-    : initialPercentage;
+    // Always use real-time monthly transactions data, never fall back to initial server data
+    // This ensures we show current month data, not cached server-side data from previous month
+    const income = totalIncome;
+    const expenses = totalExpenses;
+    const percentage = income > 0 ? Math.min(100, Math.max(0, Math.round((expenses / income) * 100))) : 0;
     return { displayIncome: income, displayExpenses: expenses, displayPercentage: percentage };
-  }, [monthlyTransactions, totalIncome, totalExpenses, initialIncome, initialExpenses, initialPercentage]);
+  }, [totalIncome, totalExpenses]);
 
   const displayOutstanding = useMemo(() => 
     realTimeOutstanding ?? initialOutstanding,
