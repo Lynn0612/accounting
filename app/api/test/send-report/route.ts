@@ -501,6 +501,8 @@ export async function GET(request: NextRequest) {
           userTotalExpense += summary.totalExpense;
           userTotalIncome += summary.totalIncome;
           userTotalPublicExpense += summary.totalPublicExpense;
+          // Always include ledger summary, even if it has no transactions
+          // This ensures all ledgers are shown in the report
           ledgerSummaries.push(summary.text);
         }
         
