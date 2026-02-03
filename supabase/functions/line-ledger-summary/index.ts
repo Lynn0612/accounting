@@ -14,21 +14,39 @@ const supabase = createClient(
 const LINE_TOKEN = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN")!;
 
 // Get last month's date range (UTC+8 Taipei time)
-function getLastMonthRange() {
-  // Get current time in Taipei (UTC+8)
-  const now = new Date();
-  const taipeiOffset = 8 * 60; // UTC+8 in minutes
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const taipeiTime = new Date(utc + (taipeiOffset * 60000));
+// Also supports manual month specification via query params
+function getLastMonthRange(manualYear?: number, manualMonth?: number) {
+  let year: number;
+  let month: number;
   
-  // Calculate last month
-  const lastMonth = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
-  const lastMonthEnd = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth(), 0);
+  if (manualYear && manualMonth) {
+    // Manual specification (e.g., from query params)
+    year = manualYear;
+    month = manualMonth;
+  } else {
+    // Get current time in Taipei (UTC+8)
+    const now = new Date();
+    const taipeiOffset = 8 * 60; // UTC+8 in minutes
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const taipeiTime = new Date(utc + (taipeiOffset * 60000));
+    
+    // Calculate last month
+    const lastMonth = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
+    year = lastMonth.getFullYear();
+    month = lastMonth.getMonth() + 1;
+  }
   
-  const year = lastMonth.getFullYear();
-  const month = lastMonth.getMonth() + 1;
+  // Calculate start and end dates for the specified month
+  // Start: first day of month at 00:00:00 Taipei time
+  // End: last day of month at 23:59:59 Taipei time
+  const lastMonthStart = new Date(year, month - 1, 1);
+  const lastMonthEnd = new Date(year, month, 0, 23, 59, 59);
   
+  // Format dates as YYYY-MM-DD for start (database date column)
+  // Format end date to include full day coverage
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+  // For end date, use the last day of the month
+  // Since database stores dates as YYYY-MM-DD, we use lte with the last day
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
   
   return { year, month, startDate, endDate };
@@ -40,6 +58,27 @@ serve(async (req) => {
   }
 
   try {
+    // Parse query parameters for manual trigger
+    const url = new URL(req.url);
+    const monthParam = url.searchParams.get('month'); // Format: YYYY-MM (e.g., 2026-02)
+    const forceParam = url.searchParams.get('force'); // Allow force trigger
+    
+    let manualYear: number | undefined;
+    let manualMonth: number | undefined;
+    
+    if (monthParam) {
+      const [yearStr, monthStr] = monthParam.split('-');
+      manualYear = parseInt(yearStr, 10);
+      manualMonth = parseInt(monthStr, 10);
+      if (isNaN(manualYear) || isNaN(manualMonth) || manualMonth < 1 || manualMonth > 12) {
+        return new Response(
+          JSON.stringify({ error: "Invalid month format. Use YYYY-MM (e.g., 2026-02)" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      console.log(`Manual trigger for month: ${manualYear}-${String(manualMonth).padStart(2, '0')}`);
+    }
+
     console.log("Starting LINE ledger summary...");
 
     // Get all users with notifications enabled from ledger_members
@@ -174,17 +213,21 @@ async function processUser(userId: string) {
     return;
   }
 
-  const { year, month, startDate, endDate } = getLastMonthRange();
+  const { year, month, startDate, endDate } = getLastMonthRange(manualYear, manualMonth);
+  
+  console.log(`Processing month: ${year}-${String(month).padStart(2, '0')}, date range: ${startDate} to ${endDate}`);
 
   // Calculate all ledger summaries first
   let grandTotalExpense = 0;
   let grandTotalIncome = 0;
+  let grandTotalPublicExpense = 0;
   const ledgerSummaries: string[] = [];
 
   for (const ledger of ledgers) {
     const summary = await calculateLedgerSummary(ledger, userId, startDate, endDate);
     grandTotalExpense += summary.totalExpense;
     grandTotalIncome += summary.totalIncome;
+    grandTotalPublicExpense += summary.totalPublicExpense || 0;
     ledgerSummaries.push(summary.text);
   }
 
@@ -194,6 +237,9 @@ async function processUser(userId: string) {
   message += `🏆 全帳本總匯\n`;
   message += `總支出：$${grandTotalExpense.toLocaleString()}\n`;
   message += `總收入：$${grandTotalIncome.toLocaleString()}\n`;
+  if (grandTotalPublicExpense > 0) {
+    message += `公費總支出：$${grandTotalPublicExpense.toLocaleString()}\n`;
+  }
   message += `━━━━━━━━━━━━━━━\n\n`;
 
   message += ledgerSummaries.join('\n\n');
@@ -207,6 +253,7 @@ async function processUser(userId: string) {
 interface LedgerSummaryResult {
   totalExpense: number;
   totalIncome: number;
+  totalPublicExpense?: number;
   text: string;
 }
 
@@ -220,20 +267,36 @@ async function calculateLedgerSummary(
   const ledgerTypeLabel = ledger.isMultiMember ? '多人' : '個人';
 
   // Fetch transactions for this ledger within date range
+  // Use gte for start and lte for end to ensure we capture the full day
+  // Database stores dates as YYYY-MM-DD strings, so lte with endDate will include all records on that day
   const { data: transactions, error: txError } = await supabase
     .from("transactions")
-    .select("id, amount, type, payer_id, category_id, income_mode, expense_payment_source")
+    .select("id, amount, type, payer_id, category_id, income_mode, expense_payment_source, is_public_expense, public_amount")
     .eq(scopeColumn, ledger.id)
     .gte("date", startDate)
     .lte("date", endDate);
 
-  if (txError || !transactions || transactions.length === 0) {
+  if (txError) {
+    console.error(`Error fetching transactions for ledger ${ledger.id}:`, txError);
     return {
       totalExpense: 0,
       totalIncome: 0,
+      totalPublicExpense: 0,
+      text: `📒 ${ledger.name}(${ledgerTypeLabel})：\n總支出：$0\n總收入：$0\n📝 查詢錯誤\n━━━━━━━━━━━━━━━`
+    };
+  }
+
+  if (!transactions || transactions.length === 0) {
+    console.log(`No transactions found for ledger ${ledger.id} in date range ${startDate} to ${endDate}`);
+    return {
+      totalExpense: 0,
+      totalIncome: 0,
+      totalPublicExpense: 0,
       text: `📒 ${ledger.name}(${ledgerTypeLabel})：\n總支出：$0\n總收入：$0\n📝 尚無交易記錄\n━━━━━━━━━━━━━━━`
     };
   }
+  
+  console.log(`Found ${transactions.length} transactions for ledger ${ledger.id}`);
 
   // Fetch transaction splits
   const { data: splits } = await supabase
@@ -255,6 +318,7 @@ async function calculateLedgerSummary(
   // Calculate totals and outstanding (like useOutstandingTotal)
   let totalExpense = 0;
   let totalIncome = 0;
+  let totalPublicExpense = 0; // Total shared expense (公費總支出)
   const categoryExpenses = new Map<string, number>();
   
   // Outstanding calculation per user (receivable - payable from current user's perspective)
@@ -270,11 +334,16 @@ async function calculateLedgerSummary(
     const myAmount = mySplit?.amount || 0;
 
     if (tx.type === "expense") {
-      // Skip deposit-funded expenses for outstanding
+      // Skip deposit-funded expenses for outstanding and totals
       if (tx.expense_payment_source === 'deposit') continue;
       
-      // Only count current user's portion for totals
+      // Only count current user's portion for personal expense totals
       totalExpense += myAmount;
+
+      // Calculate public expense (公費總支出) - use public_amount if available
+      if (tx.is_public_expense === true && tx.public_amount != null) {
+        totalPublicExpense += Number(tx.public_amount) || 0;
+      }
 
       // Track category expenses for top 3 (only user's portion)
       if (tx.category_id && myAmount > 0) {
@@ -410,6 +479,11 @@ async function calculateLedgerSummary(
   let text = `📒 ${ledger.name}(${ledgerTypeLabel})：\n`;
   text += `總支出：$${totalExpense.toLocaleString()}\n`;
   text += `總收入：$${totalIncome.toLocaleString()}\n`;
+  
+  // Add public expense (公費總支出) if there are multiple members
+  if (ledger.isMultiMember && totalPublicExpense > 0) {
+    text += `公費總支出：$${totalPublicExpense.toLocaleString()}\n`;
+  }
 
   // Outstanding (only for multi-member ledgers)
   if (ledger.isMultiMember) {
@@ -460,7 +534,7 @@ async function calculateLedgerSummary(
 
   text += `━━━━━━━━━━━━━━━`;
 
-  return { totalExpense, totalIncome, text };
+  return { totalExpense, totalIncome, totalPublicExpense, text };
 }
 
 async function sendLineMessage(lineUserId: string, text: string) {

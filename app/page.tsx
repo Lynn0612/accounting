@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { startOfMonth, endOfMonth } from "date-fns";
 import HomePageClient from "@/components/HomePageClient";
 import { cookies } from "next/headers";
 
@@ -71,11 +72,12 @@ async function getDashboardData() {
 
   const activeLedgerId = ledgerMembership.ledger_id;
 
+  // Calculate current month date range using date-fns
   const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-  const startDateStr = startOfMonth.toISOString().split('T')[0];
-  const endDateStr = endOfMonth.toISOString();
+  const monthStart = startOfMonth(now);
+  const monthEnd = endOfMonth(now);
+  const startDateStr = monthStart.toISOString().split('T')[0];
+  const endDateStr = monthEnd.toISOString();
 
   // Optimized: Fetch all data in parallel with joins
   // Note: We still fetch recentTransactions on server for initial render,
@@ -118,6 +120,7 @@ async function getDashboardData() {
     fetchMonthlySplits(true),
     fetchOutstandingSplits(true),
     // Recent transactions with categories and payer profiles in one query
+    // Filter to current month to prioritize "New Month" focus as user prefers
     // This will be used as initialData in React Query to avoid duplicate fetching
     supabase
       .from("transactions")
@@ -141,6 +144,8 @@ async function getDashboardData() {
         )
       `)
       .eq("ledger_id", activeLedgerId)
+      .gte("date", startDateStr)
+      .lte("date", endDateStr)
       .order("date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(5)

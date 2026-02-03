@@ -31,12 +31,45 @@ interface SettlementDetailReceived {
 
 serve(async (req) => {
   try {
-    const now = new Date();
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    // Parse query parameters for manual trigger
+    const url = new URL(req.url);
+    const monthParam = url.searchParams.get('month'); // Format: YYYY-MM (e.g., 2026-02)
     
-    const startDate = lastMonth.toISOString().split('T')[0];
-    const endDate = lastMonthEnd.toISOString().split('T')[0];
+    let year: number;
+    let month: number;
+    
+    if (monthParam) {
+      const [yearStr, monthStr] = monthParam.split('-');
+      year = parseInt(yearStr, 10);
+      month = parseInt(monthStr, 10);
+      if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        return new Response(
+          JSON.stringify({ error: "Invalid month format. Use YYYY-MM (e.g., 2026-02)" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      console.log(`Manual trigger for month: ${year}-${String(month).padStart(2, '0')}`);
+    } else {
+      // Get current time in Taipei (UTC+8)
+      const now = new Date();
+      const taipeiOffset = 8 * 60; // UTC+8 in minutes
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const taipeiTime = new Date(utc + (taipeiOffset * 60000));
+      
+      // Calculate last month
+      const lastMonth = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
+      year = lastMonth.getFullYear();
+      month = lastMonth.getMonth() + 1;
+    }
+    
+    // Calculate start and end dates for the specified month
+    const lastMonthStart = new Date(year, month - 1, 1);
+    const lastMonthEnd = new Date(year, month, 0, 23, 59, 59);
+    
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
+    
+    console.log(`Processing month: ${year}-${String(month).padStart(2, '0')}, date range: ${startDate} to ${endDate}`);
 
     const { data: members, error: membersError } = await supabase
       .from("ledger_members")

@@ -3,6 +3,7 @@
 import { useState, useMemo, memo, useCallback } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { startOfMonth, endOfMonth } from "date-fns";
 import { useLedger } from "@/contexts/LedgerContext";
 import { useUser } from "@/hooks/useUser";
 import { useProfiles } from "@/hooks/useProfiles";
@@ -51,20 +52,29 @@ const HomePageClient = memo(function HomePageClient({
   );
 
   // Get current month date range for total income/expenses - memoize to avoid recalculation
-  const { startOfMonth, endOfMonth } = useMemo(() => {
-  const now = new Date();
+  // Recalculate when month changes by including current month/year in dependencies
+  const { startOfMonthStr, endOfMonthStr } = useMemo(() => {
+    const now = new Date();
+    const start = startOfMonth(now);
+    const end = endOfMonth(now);
     return {
-      startOfMonth: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
-      endOfMonth: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString(),
+      startOfMonthStr: start.toISOString().split('T')[0],
+      endOfMonthStr: end.toISOString(),
     };
-  }, []); // Only recalculate when component mounts or month changes (could add month dependency if needed)
+  }, []); // Recalculate on mount - component will re-render when month changes naturally
 
+  // Recent transactions: prioritize current month, but show latest N items if needed
+  // Filter to current month to focus on "New Month" as user prefers
   const { data: realTimeTransactions } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
+    startDate: startOfMonthStr,
+    endDate: endOfMonthStr,
     limit: 5,
     includeCategory: true,
     includePayer: true,
+  }, {
+    enabled: !!activeLedger?.id
   });
 
   const { data: settlements = [] } = useSettlements({
@@ -150,8 +160,8 @@ const HomePageClient = memo(function HomePageClient({
   const { data: monthlyTransactions } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
-    startDate: startOfMonth,
-    endDate: endOfMonth,
+    startDate: startOfMonthStr,
+    endDate: endOfMonthStr,
     userId: user?.id, // 個人化交易紀錄
   }, {
     enabled: !!activeLedger?.id && !!user?.id
@@ -162,8 +172,8 @@ const HomePageClient = memo(function HomePageClient({
   const { data: allMonthlyTransactions } = useTransactions({
     ledgerId: activeLedger?.id || '',
     ledgerType: activeLedger?.type || 'ledger',
-    startDate: startOfMonth,
-    endDate: endOfMonth,
+    startDate: startOfMonthStr,
+    endDate: endOfMonthStr,
     type: 'expense',
     includeCategory: true,
   }, {
