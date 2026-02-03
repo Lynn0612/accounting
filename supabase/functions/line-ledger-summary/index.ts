@@ -28,13 +28,13 @@ function getLastMonthRange(monthParam?: string) {
     }
     targetDate = new Date(year, month - 1, 1); // month is 0-indexed
   } else {
-    // Get current time in Taipei (UTC+8)
-    const now = new Date();
-    const taipeiOffset = 8 * 60; // UTC+8 in minutes
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const taipeiTime = new Date(utc + (taipeiOffset * 60000));
-    
-    // Calculate last month
+  // Get current time in Taipei (UTC+8)
+  const now = new Date();
+  const taipeiOffset = 8 * 60; // UTC+8 in minutes
+  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+  const taipeiTime = new Date(utc + (taipeiOffset * 60000));
+  
+  // Calculate last month
     targetDate = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
   }
   
