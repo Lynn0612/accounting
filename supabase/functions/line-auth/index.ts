@@ -221,7 +221,7 @@ serve(async (req) => {
       aud: "authenticated",
       iat: now,
       nbf: now, // 不早於現在
-      exp: now + (60 * 60 * 24), // 24 小時後過期
+      exp: now + (60 * 60 * 24 * 30), // 30 天後過期，與 cookie 持久化一致，減少重新登入
       sub: userId,
       role: "authenticated",
     }

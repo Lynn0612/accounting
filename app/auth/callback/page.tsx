@@ -212,7 +212,7 @@ export default function AuthCallbackPage() {
           // 使用 access_token 設置 session，確保完全完成後才 redirect
           const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
             access_token: data.access_token,
-            refresh_token: data.access_token, // 使用相同的 token 作為 refresh_token
+            refresh_token: data.refresh_token || '', // 自訂 JWT 無 refresh_token，避免錯誤 refresh 清掉 session
           });
           
           if (sessionError) {
