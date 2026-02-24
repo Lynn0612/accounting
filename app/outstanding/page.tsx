@@ -82,8 +82,9 @@ export default function OutstandingPage() {
       const startStr = toDateOnlyString(startDate);
       const endStr = toDateOnlyString(endDate);
 
-      // Fetch all relevant splits at once, similar to useOutstandingTotal hook
-      let splitsQuery = supabase
+      // Fetch all relevant splits at once (no date filter in query - filter in memory
+      // so range mode and inclusive end date work correctly)
+      const { data: rawSplits, error: splitsError } = await supabase
         .from('transaction_splits')
         .select(`
           amount,
@@ -99,15 +100,19 @@ export default function OutstandingPage() {
         `)
         .eq(scopeColumn, activeLedger.id);
 
-      if (dateMode === "range") {
-        splitsQuery = splitsQuery
-          .gte('transactions.date', startStr)
-          .lte('transactions.date', endStr);
-      }
+      // When in range mode, filter by transaction date in memory (date-part only so
+      // end date is inclusive: e.g. 2/1 includes all of Feb 1)
+      const splits =
+        dateMode === "range" && rawSplits
+          ? (rawSplits as any[]).filter((s) => {
+              const d = s.transactions?.date;
+              if (!d) return false;
+              const dateOnly = typeof d === "string" ? d.slice(0, 10) : "";
+              return dateOnly >= startStr && dateOnly <= endStr;
+            })
+          : (rawSplits ?? []);
 
-      const { data: splits, error: splitsError } = await splitsQuery;
-
-      if (splitsError || !splits) {
+      if (splitsError || rawSplits == null) {
         console.error('Error fetching splits:', splitsError);
         setWhoIOwe([]);
         setWhoOwesMe([]);
