@@ -210,9 +210,10 @@ export default function AuthCallbackPage() {
           const supabase = createClient();
           
           // 使用 access_token 設置 session，確保完全完成後才 redirect
+          // 自訂 JWT 無 refresh_token 時必須傳入非空值，否則 Supabase 會拋 AuthSessionMissingError
           const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
             access_token: data.access_token,
-            refresh_token: data.refresh_token || '', // 自訂 JWT 無 refresh_token，避免錯誤 refresh 清掉 session
+            refresh_token: data.refresh_token || data.access_token,
           });
           
           if (sessionError) {

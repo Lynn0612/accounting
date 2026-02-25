@@ -2,7 +2,8 @@ import { createClient } from './supabase/client'
 
 interface LineAuthResponse {
   access_token: string
-  token_type: string
+  refresh_token?: string
+  token_type?: string
   error?: string
 }
 
@@ -35,9 +36,10 @@ export async function exchangeLineToken(idToken: string): Promise<{ success: boo
     }
 
     const supabase = createClient()
+    // 自訂 JWT 無 refresh_token 時需傳入 access_token 以通過 Supabase 客戶端檢查
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: data.access_token,
-      refresh_token: '',
+      refresh_token: data.refresh_token || data.access_token,
     })
 
     if (sessionError) {
