@@ -309,10 +309,10 @@ export default function TransactionsPage() {
         </Link>
         <div className="w-12"></div>
         <Link 
-          href="/finance" 
-          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/finance' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
+          href="/Aifinance" 
+          className={`flex flex-col items-center justify-center w-12 h-12 rounded-full transition-colors ${pathname === '/Aifinance' ? 'bg-primary/10 text-primary' : 'text-gray-400 hover:text-primary hover:bg-gray-50'}`}
         >
-          <span className={`material-symbols-outlined ${pathname === '/finance' ? 'filled' : ''}`} style={pathname === '/finance' ? { fontVariationSettings: "'FILL' 1" } : {}}>account_balance_wallet</span>
+          <span className={`material-symbols-outlined ${pathname === '/Aifinance' ? 'filled' : ''}`} style={pathname === '/Aifinance' ? { fontVariationSettings: "'FILL' 1" } : {}}>account_balance_wallet</span>
         </Link>
         <Link 
           href="/settings" 

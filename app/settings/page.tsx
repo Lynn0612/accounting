@@ -2816,7 +2816,7 @@ export default function SettingsPage() {
         </Link>
         <div className="w-12"></div>
         <Link
-          href="/finance"
+          href="/Aifinance"
           className="flex flex-col items-center justify-center w-12 h-12 rounded-full text-gray-400 hover:text-primary hover:bg-gray-50 transition-colors"
         >
           <span className="material-symbols-outlined" style={{ fontSize: "24px" }}>account_balance_wallet</span>

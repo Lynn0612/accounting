@@ -16,30 +16,36 @@ const LINE_TOKEN = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN")!;
 // Get last month's date range (UTC+8 Taipei time)
 // If monthParam is provided (format: YYYY-MM), use that month instead of last month
 function getLastMonthRange(monthParam?: string) {
-  let targetDate: Date;
-  
+  let targetYear: number;
+  let targetMonth: number; // 1-12
+
   if (monthParam) {
-    // Parse month parameter (YYYY-MM)
     const [yearStr, monthStr] = monthParam.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
     if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
       throw new Error(`Invalid month parameter: ${monthParam}. Use format YYYY-MM`);
     }
-    targetDate = new Date(year, month - 1, 1); // month is 0-indexed
+    targetYear = year;
+    targetMonth = month;
   } else {
-  // Get current time in Taipei (UTC+8)
-  const now = new Date();
-  const taipeiOffset = 8 * 60; // UTC+8 in minutes
-  const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-  const taipeiTime = new Date(utc + (taipeiOffset * 60000));
-  
-  // Calculate last month
-    targetDate = new Date(taipeiTime.getFullYear(), taipeiTime.getMonth() - 1, 1);
+    // 用 UTC 固定算出「台北時間的今天」再取上個月，避免伺服器時區影響
+    const now = new Date();
+    const taipeiOffsetMs = 8 * 60 * 60 * 1000;
+    const taipeiInstant = new Date(now.getTime() + taipeiOffsetMs);
+    const taipeiYear = taipeiInstant.getUTCFullYear();
+    const taipeiMonth = taipeiInstant.getUTCMonth(); // 0-indexed
+    if (taipeiMonth === 0) {
+      targetYear = taipeiYear - 1;
+      targetMonth = 12;
+    } else {
+      targetYear = taipeiYear;
+      targetMonth = taipeiMonth; // 1-12 (taipeiMonth 是 0-indexed，1=二月→上個月=1月)
+    }
   }
-  
-  const year = targetDate.getFullYear();
-  const month = targetDate.getMonth() + 1; // 0-indexed month
+
+  const year = targetYear;
+  const month = targetMonth;
   
   // Calculate start and end of the target month
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
