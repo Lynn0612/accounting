@@ -156,7 +156,10 @@ export async function middleware(request: NextRequest) {
     // 如果用戶已登入但訪問登入頁，重定向到首頁
     if (isLoginPage) {
       console.log('Middleware: Logged in user accessing login page, redirecting to home')
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+      // 本機開發時用目前請求的 origin，避免導向錯誤 port
+      const siteUrl = request.nextUrl.origin.startsWith('http://localhost')
+        ? request.nextUrl.origin
+        : (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin)
       return NextResponse.redirect(new URL('/', siteUrl))
     }
     console.log('Middleware: Allowing access to protected route')
@@ -172,7 +175,10 @@ export async function middleware(request: NextRequest) {
 
   // 只有當用戶未登入且不是來自 LIFF 時，才重定向到登入頁
   console.log('Middleware: User is NOT logged in (no user/session/cookie), redirecting to /login')
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  // 本機開發時用目前請求的 origin，避免導向錯誤 port
+  const siteUrl = request.nextUrl.origin.startsWith('http://localhost')
+    ? request.nextUrl.origin
+    : (process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin)
   const redirectUrl = new URL('/login', siteUrl)
   
   // 保留原始路徑作為重定向參數（支援多種參數名稱）

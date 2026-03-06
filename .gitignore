@@ -1,17 +1,29 @@
 # dependencies
 /node_modules
+/frontend/node_modules
 /.pnp
 .pnp.js
 
 # testing
 /coverage
 
-# next.js
+# next.js (frontend)
 /.next/
+/frontend/.next/
 /out/
+/frontend/out/
 
 # production
 /build
+/frontend/build
+
+# ai-service
+/ai-service/venv/
+/ai-service/.venv/
+/ai-service/.env
+
+venv
+.env
 
 # misc
 .DS_Store
