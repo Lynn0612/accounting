@@ -1,17 +1,28 @@
 # dependencies
 /node_modules
-/.pnp
-.pnp.js
+node_modules/
 
 # testing
 /coverage
 
 # next.js
 /.next/
+.next/
 /out/
+out/
 
 # production
 /build
+/build
+
+# frontend 與 ai-service 的建置/快取（避免 git add . 時誤加）
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+ai-service/__pycache__/
+ai-service/.venv/
+ai-service/venv/
+ai-service/.env
 
 # misc
 .DS_Store

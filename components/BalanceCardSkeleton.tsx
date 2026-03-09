@@ -11,7 +11,7 @@ const BalanceCardSkeleton = memo(function BalanceCardSkeleton() {
         <div className="w-32 h-32 rounded-full bg-gray-200"></div>
       </div>
     </div>
-  );
+  ); 
 });
 
 BalanceCardSkeleton.displayName = "BalanceCardSkeleton";
