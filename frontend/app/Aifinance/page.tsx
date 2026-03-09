@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Search } from 'lucide-react'
-import Loading from '@/components/Loading'
+import Loading from '@/components/Loading' 
 
 // Dynamically import heavy chart components to reduce initial bundle size
 // Recharts is a large library (~200KB), so we load it only when needed
