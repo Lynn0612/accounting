@@ -2092,7 +2092,7 @@ export default function SettingsPage() {
     <div className="relative min-h-screen w-full flex flex-col max-w-md mx-auto overflow-x-hidden bg-background-light font-display text-slate-800 transition-colors duration-200 pb-32">
       <header className="sticky top-0 z-40 bg-background-light/90 backdrop-blur-md px-6 py- flex items-center justify-between">
         <div className="w-10"></div>
-        <h1 className="text-xl font-extrabold tracking-tight text-slate-900 text-center flex-1">
+        <h1 className="text-xl font-extrabold tracking-tight text-slate-900 text-center flex-1 mt-3">
           Account Book
         </h1>
         <button
